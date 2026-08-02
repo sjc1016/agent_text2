@@ -55,9 +55,7 @@ class TestToolRegistry:
                 return "通话分钟：已用 120 分钟，剩余 80 分钟"
             return "总用量摘要"
 
-        r = registry.invoke(
-            "query_usage", ToolContext(customer_id=1, params={"type": "call"})
-        )
+        r = registry.invoke("query_usage", ToolContext(customer_id=1, params={"type": "call"}))
         assert "120" in r
 
     def test_registry_list_tools_returns_sorted_list(self):
@@ -66,11 +64,13 @@ class TestToolRegistry:
 
         @registry.register
         @tool(name="t1", description="工具1")
-        def t1(ctx): return "r1"
+        def t1(ctx):
+            return "r1"
 
         @registry.register
         @tool(name="t2", description="工具2")
-        def t2(ctx): return "r2"
+        def t2(ctx):
+            return "r2"
 
         tools = registry.list_tools()
         names = [t.name for t in tools]
@@ -86,6 +86,7 @@ class TestToolRegistry:
 # ---------------------------------------------------------------------------
 # RED 2-2：AssistantService 编排 tool 调用（验收标准2+3+5）
 # ---------------------------------------------------------------------------
+
 
 class FakeToolCallingLLM(FakeListLLM):
     """带 tool_call 能力的伪 LLM：首轮返回 `<|tool_call|>` 标记，service 解析为 tool 调用。
@@ -126,9 +127,7 @@ class TestAssistantToolCalling:
         return AssistantService(llm=llm, tool_registry=registry)
 
     @pytest.mark.asyncio
-    async def test_assistant_invokes_tool_and_returns_final_answer(
-        self, svc: AssistantService
-    ):
+    async def test_assistant_invokes_tool_and_returns_final_answer(self, svc: AssistantService):
         """Assistant 自动执行 tool 调用 → 追加 tool_result → 再次 LLM → 返回最终回复。"""
         tokens: list[str] = []
         audit_events: list[dict] = []
@@ -153,9 +152,7 @@ class TestAssistantToolCalling:
         assert tool_events[0]["success"] is True
 
     @pytest.mark.asyncio
-    async def test_tool_result_in_history_but_not_marked_for_message(
-        self, svc: AssistantService
-    ):
+    async def test_tool_result_in_history_but_not_marked_for_message(self, svc: AssistantService):
         """验收标准5：TOOLS 消息在 LLM prompt 历史中用于上下文，但持久化时不应写入 Message 表。
 
         具体：service 对该条是 LLM prompt 内存历史中有 role=TOOL 的 ChatMessage，

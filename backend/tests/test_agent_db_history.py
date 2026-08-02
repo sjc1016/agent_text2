@@ -35,9 +35,7 @@ class _HistoryInspectingLLM(BaseLLM):
         self.response = response
 
     def stream(self, messages):
-        self.seen_histories.append(
-            [ChatMessage(role=m.role, content=m.content) for m in messages]
-        )
+        self.seen_histories.append([ChatMessage(role=m.role, content=m.content) for m in messages])
         yield from self.response
 
 
@@ -111,9 +109,7 @@ class TestDbHistoryIntegration:
         assert last_call_msgs[1].content == "历史用户提问"
         assert last_call_msgs[2].content == "新提问"
 
-    def test_save_persistable_messages_to_db_writes_new_messages_only(
-        self, db: Session
-    ):
+    def test_save_persistable_messages_to_db_writes_new_messages_only(self, db: Session):
         """save_messages_to_db：增量写入 DB 中尚未入库的新消息。"""
         _cust, conv = _seed_customer_and_conversation(db)
         create_message(db, conv.id, source="user", content="DB 已有用户消息")

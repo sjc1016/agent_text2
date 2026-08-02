@@ -118,9 +118,7 @@ class AssistantService:
                 for tok in raw_tokens:
                     await _safe_cb(callbacks, "on_token", tok)
                     yield tok
-                history.append(
-                    ChatMessage(role=ChatRole.ASSISTANT, content=llm_output)
-                )
+                history.append(ChatMessage(role=ChatRole.ASSISTANT, content=llm_output))
                 return
 
             # tool_call：内部执行，不对外产出中间 tokens
@@ -136,11 +134,7 @@ class AssistantService:
             history.append(
                 ChatMessage(
                     role=ChatRole.TOOL,
-                    content=(
-                        result.content
-                        if result.success
-                        else f"[错误] {result.error}"
-                    ),
+                    content=(result.content if result.success else f"[错误] {result.error}"),
                     tool_call_id=result.call_id,
                     tool_name=result.name,
                 )

@@ -71,9 +71,7 @@ class TestAssistantServiceStreaming:
         assert "".join(tokens) == "你好，我是电信客服助理。"
 
     @pytest.mark.anyio
-    async def test_assistant_chat_preserves_history_across_turns(
-        self, svc: AssistantService
-    ):
+    async def test_assistant_chat_preserves_history_across_turns(self, svc: AssistantService):
         """跨轮对话：ChatMessageHistory 正确累积（验收标准4）。"""
         # 第一轮
         async for _ in svc.chat(conversation_id=42, user_message="查一下话费"):
@@ -98,9 +96,7 @@ class TestAssistantServiceStreaming:
         ]
 
     @pytest.mark.anyio
-    async def test_assistant_system_prompt_contains_static_prompts(
-        self, svc: AssistantService
-    ):
+    async def test_assistant_system_prompt_contains_static_prompts(self, svc: AssistantService):
         """System prompt 含：问候话术、合规提示、转接说明（PRD 实现决策 › 知识来源 › 静态话术）。"""
         history = svc.get_history(conversation_id=999)
         # 无对话时，get_history 返回仅含 system prompt 的初始化历史
@@ -111,9 +107,7 @@ class TestAssistantServiceStreaming:
         assert "二次确认" in system_msg.content or "确认" in system_msg.content
 
     @pytest.mark.anyio
-    async def test_different_conversations_have_isolated_history(
-        self, svc: AssistantService
-    ):
+    async def test_different_conversations_have_isolated_history(self, svc: AssistantService):
         """不同 conversation_id 的历史严格隔离（无跨会话泄漏）。"""
         async for _ in svc.chat(conversation_id=1, user_message="我是会话1"):
             pass

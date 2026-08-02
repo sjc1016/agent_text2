@@ -170,9 +170,7 @@ class ToolRegistry:
             ok = False
             err = f"{type(e).__name__}: {e}"
 
-        result = ToolResult(
-            call_id=call.id, name=call.name, success=ok, content=content, error=err
-        )
+        result = ToolResult(call_id=call.id, name=call.name, success=ok, content=content, error=err)
         if ctx.audit_hook is not None:
             ctx.audit_hook(
                 {

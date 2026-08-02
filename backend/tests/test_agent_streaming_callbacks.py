@@ -61,9 +61,7 @@ class TestStreamingCallbacks:
         """chat 逐 token 触发 on_token；最终文本与 callbacks 收集一致。"""
         cb = RecordingCallbacks()
         tokens: list[str] = []
-        async for tok in svc.chat(
-            conversation_id=1, user_message="ping 一下", callbacks=cb
-        ):
+        async for tok in svc.chat(conversation_id=1, user_message="ping 一下", callbacks=cb):
             tokens.append(tok)
 
         final_text = "".join(tokens)
@@ -77,9 +75,7 @@ class TestStreamingCallbacks:
     async def test_tool_start_end_callbacks(self, svc: AssistantService):
         """tool 调用前后触发 on_tool_start / on_tool_end；参数与结果一致。"""
         cb = RecordingCallbacks()
-        async for _ in svc.chat(
-            conversation_id=2, user_message="ping", callbacks=cb
-        ):
+        async for _ in svc.chat(conversation_id=2, user_message="ping", callbacks=cb):
             pass
 
         assert len(cb.tool_starts) == 1
