@@ -42,13 +42,17 @@ async def test_list_conversations_unauthenticated_returns_401(db_client):
 
 
 async def test_list_conversations_returns_only_own_conversations(db_client, db):
-    from app.models import Conversation
+    from app.models import Conversation, Customer
 
     customer, token = await _login(db_client, db, phone="13900000011")
+    # 他人的真实客户（外键约束在测试引擎已启用，需真实父行）
+    other = Customer(phone="13900000999", service_password_hash=_hash_password("svc12345"))
+    db.add(other)
+    db.commit()
     # 自己的会话
     db.add(Conversation(customer_id=customer.id, status="authenticated"))
     # 他人的会话
-    db.add(Conversation(customer_id=customer.id + 999, status="authenticated"))
+    db.add(Conversation(customer_id=other.id, status="authenticated"))
     db.commit()
 
     response = await db_client.get(
@@ -100,16 +104,19 @@ async def test_get_messages_returns_history_ordered(db_client, db):
 
 
 async def test_get_messages_other_customer_conversation_returns_404(db_client, db):
-    from app.models import Conversation
+    from app.models import Conversation, Customer
 
     customer, token = await _login(db_client, db, phone="13900000013")
-    # 他人会话（不属于当前客户）
-    other = Conversation(customer_id=customer.id + 999, status="authenticated")
+    # 他人会话（不属于当前客户；真实客户行以满足外键约束）
+    other = Customer(phone="13900000998", service_password_hash=_hash_password("svc12345"))
     db.add(other)
+    db.commit()
+    other_conv = Conversation(customer_id=other.id, status="authenticated")
+    db.add(other_conv)
     db.commit()
 
     response = await db_client.get(
-        f"/conversations/{other.id}/messages",
+        f"/conversations/{other_conv.id}/messages",
         headers={"Authorization": f"Bearer {token}"},
     )
 

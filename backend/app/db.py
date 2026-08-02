@@ -13,6 +13,7 @@ from collections.abc import Generator
 from typing import Any
 
 import sqlalchemy as sa
+import sqlite_vec
 from sqlalchemy import event
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -20,7 +21,7 @@ from app.config import get_settings
 
 
 def create_engine(url: str, **kwargs: Any) -> sa.Engine:
-    """创建引擎；SQLite 自动开启 WAL 与外键约束。"""
+    """创建引擎；SQLite 自动开启 WAL、外键约束并加载 sqlite-vec 向量扩展。"""
     engine = sa.create_engine(url, future=True, **kwargs)
     if engine.dialect.name == "sqlite":
 
@@ -30,6 +31,10 @@ def create_engine(url: str, **kwargs: Any) -> sa.Engine:
             cur.execute("PRAGMA journal_mode=WAL")
             cur.execute("PRAGMA foreign_keys=ON")
             cur.close()
+            # sqlite-vec 扩展（ADR 0002：sqlite-vec 向量检索）；迁移 0006 与
+            # 运行时检索均依赖它（vec0 虚拟表）。
+            dbapi_conn.enable_load_extension(True)
+            sqlite_vec.load(dbapi_conn)
 
     return engine
 
