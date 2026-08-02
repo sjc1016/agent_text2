@@ -17,9 +17,9 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from app.auth.security import decode_token, get_customer_by_id
+from app.auth.security import decode_token, get_agent_by_id, get_customer_by_id
 from app.db import get_db
-from app.models import Customer
+from app.models import Customer, User
 
 # auto_error=False：缺失/格式错由本依赖统一转 401（而非 HTTPBearer 默认 403），
 # 与 CONTEXT › 认证语义「无凭据 → 401」一致。
@@ -73,3 +73,45 @@ def get_current_customer(db: DbSession, credentials: BearerCreds) -> Customer:
 
 # 受保护端点的统一鉴权写法：`current: CurrentCustomer` 即可。
 CurrentCustomer = Annotated[Customer, Depends(get_current_customer)]
+
+
+def get_current_agent(db: DbSession, credentials: BearerCreds) -> User:
+    """解析 Bearer token → 校验 agent_access 类型 → 返回坐席账号 User；任一步失败 → 401。
+
+    与 get_current_customer 同构，差异仅在 token type（agent_access）与主体表
+    （users 坐席账号）。客户 access token 访问坐席端点 → 401（主体隔离）。
+    """
+    _unauthorized = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="未提供有效的坐席认证凭据",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise _unauthorized
+
+    try:
+        payload = decode_token(credentials.credentials)
+    except jwt.PyJWTError as exc:
+        raise _unauthorized from exc
+
+    if payload.get("type") != "agent_access":
+        raise _unauthorized
+
+    sub = payload.get("sub")
+    if not isinstance(sub, str):
+        raise _unauthorized
+    try:
+        agent_id = int(sub)
+    except ValueError as exc:
+        raise _unauthorized from exc
+
+    agent = get_agent_by_id(db, agent_id)
+    if agent is None:
+        raise _unauthorized
+
+    return agent
+
+
+# 坐席受保护端点的统一鉴权写法：`current: CurrentAgent` 即可。
+CurrentAgent = Annotated[User, Depends(get_current_agent)]

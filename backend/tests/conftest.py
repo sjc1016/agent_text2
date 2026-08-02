@@ -8,7 +8,7 @@
 """
 
 import io
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -105,3 +105,60 @@ def ws_client(tmp_path):
     finally:
         app.dependency_overrides.clear()
         engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def _reset_ws_hub():
+    """测试后清空 hub 连接注册表。
+
+    ConnectionHub 为模块级单例（单进程部署设计）；TestClient 未进 `with` 上下文时
+    连接注销可能迟到，残留连接会让后续测试的推送卡在已关闭连接上（挂起）。
+    每个测试后重置，保证测试间隔离（对全部测试生效，非 WS 测试无副作用）。
+    """
+    yield
+    from app.ws.hub import hub
+
+    hub.reset()
+
+
+def ws_recv_json(session, timeout: float = 5.0) -> dict:
+    """可靠接收一条 WS JSON 消息（envelope 的 data 已解析），带超时。
+
+    背景：starlette TestClient 的 `session.receive_json()` 经 `portal.call` 阻塞
+    读取，底层是 `asyncio.Event` 的跨线程 set。在 Windows + Python 3.13 +
+    ProactorEventLoop 下，**两个 WS 连接并发**时（如坐席线程向客户连接推送），
+    跨线程 `loop.call_soon` 不会唤醒阻塞在 IOCP select 的客户 loop，
+    导致 receive 偶发永久挂起。生产环境（uvicorn 单进程单事件循环）无此问题。
+
+    本 helper 绕开 portal 唤醒：直接轮询 session 的发送端缓冲（receive_nowait），
+    消息只要被 push 进入缓冲即取到；超时抛 TimeoutError（测试失败而非挂起）。
+    仅双连接测试使用；单连接 + REST 触发推送场景（push 阻塞完成于 receive 前）
+    无需改动。
+    """
+    import json
+    import time
+
+    from anyio import WouldBlock
+    from starlette.websockets import WebSocketDisconnect
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            raw = session._send_rx.receive_nowait()
+        except WouldBlock:
+            time.sleep(0.005)
+            continue
+        if raw.get("type") == "websocket.close":
+            raise WebSocketDisconnect(code=raw.get("code", 1000))
+        if raw.get("type") == "websocket.send":
+            if "text" in raw:
+                return json.loads(raw["text"])
+            if "bytes" in raw:
+                return json.loads(raw["bytes"])
+    raise TimeoutError(f"ws receive timed out after {timeout}s")
+
+
+@pytest.fixture
+def recv_ws() -> Callable[..., dict]:
+    """WS 接收辅助（返回 ws_recv_json）：双连接 WS 测试用它替代 receive_json。"""
+    return ws_recv_json

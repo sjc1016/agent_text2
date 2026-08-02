@@ -13,6 +13,7 @@ from app.models.general import (
     KnowledgeDocument,
     Plan,
 )
+from app.models.ticket import Notification, Ticket
 from app.models.users import User
 
 __all__ = [
@@ -23,6 +24,8 @@ __all__ = [
     "Conversation",
     "Session",
     "Message",
+    "Ticket",
+    "Notification",
     "KnowledgeDocument",
     "Plan",
     "CoverageArea",

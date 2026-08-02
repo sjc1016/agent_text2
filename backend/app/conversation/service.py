@@ -24,12 +24,13 @@ CONVERSATION_STATES: frozenset[str] = frozenset(
 #: Unauthenticated → Authenticated → In-Progress（等待二次确认）
 #:                               → Authenticated（Ticket 入队后回退）
 #:                               → Handed-off（转接）→ Closed
-#: closed 为终态；任意活跃态可 → closed（会话异常/正常关闭）。
+#: handed_off → authenticated：坐席转回助理（US-26，B9）；closed 为终态。
+#: 任意活跃态可 → closed（会话异常/正常关闭）。
 _CONVERSATION_TRANSITIONS: dict[str, frozenset[str]] = {
     "unauthenticated": frozenset({"authenticated", "closed"}),
     "authenticated": frozenset({"in_progress", "handed_off", "closed"}),
     "in_progress": frozenset({"authenticated", "closed"}),
-    "handed_off": frozenset({"closed"}),
+    "handed_off": frozenset({"authenticated", "closed"}),
     "closed": frozenset(),
 }
 

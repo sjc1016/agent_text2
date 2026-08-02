@@ -121,6 +121,126 @@
         ]
       }
     },
+    "/agents/login": {
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Agent Login",
+        "description": "工号+密码登录 → 颁发坐席 JWT；成功/失败均记审计（CONTEXT › 审计日志）。",
+        "operationId": "agent_login_agents_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/status": {
+      "put": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Update Agent Status",
+        "description": "切换坐席状态（在线/离线/小休，US-30）。\n\n坐席 JWT 保护（CurrentAgent）；非法状态由 schema Literal 转 422。\ndb.commit 后经 hub 向该坐席活跃 WS 连接推送 agent.status\n（REST 与 WS 独立连接，推送方不在 WS 上下文内 —— 复用 B7 hub 模式）。",
+        "operationId": "update_agent_status_agents_status_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentStatusUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/agents/queues": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "List Pending Queues",
+        "description": "待接入 Handoff 会话列表（US-20）。\n\n仅返回 handed_off 且未被接入的会话；号码脱敏（138****0001）。",
+        "operationId": "list_pending_queues_agents_queues_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/QueueItemOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Pending Queues Agents Queues Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/conversations": {
       "get": {
         "tags": [
@@ -187,6 +307,186 @@
                     "$ref": "#/components/schemas/MessageOut"
                   },
                   "title": "Response List Messages Conversations  Conversation Id  Messages Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tickets": {
+      "get": {
+        "tags": [
+          "ticket"
+        ],
+        "summary": "List Tickets",
+        "description": "当前客户的工单列表（未认证 401 由 CurrentCustomer 守卫）。",
+        "operationId": "list_tickets_tickets_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TicketOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Tickets Tickets Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "ticket"
+        ],
+        "summary": "Create",
+        "description": "创建工单（办理类/工单类），customer 关联当前认证客户，默认 pending 入队。",
+        "operationId": "create_tickets_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TicketCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/tickets/{ticket_id}": {
+      "get": {
+        "tags": [
+          "ticket"
+        ],
+        "summary": "Get Ticket",
+        "description": "工单详情；不存在或不属于当前客户 → 404（不泄露存在性）。",
+        "operationId": "get_ticket_tickets__ticket_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "ticket_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Ticket Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "ticket"
+        ],
+        "summary": "Update Status",
+        "description": "工单状态流转：按 ticket_type 双状态机校验，非法 → 422 状态不变。\n\n成功后推送 WS ticket.update；触发通知态（办理生效/失败、工单派单/关闭）\n推送 notification.push 站内通知。",
+        "operationId": "update_status_tickets__ticket_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "ticket_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Ticket Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TicketStatusUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketOut"
                 }
               }
             }
@@ -454,6 +754,74 @@
   },
   "components": {
     "schemas": {
+      "AgentLoginRequest": {
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "title": "Employee Id",
+            "description": "坐席工号"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password",
+            "description": "登录密码"
+          }
+        },
+        "type": "object",
+        "required": [
+          "employee_id",
+          "password"
+        ],
+        "title": "AgentLoginRequest"
+      },
+      "AgentPublic": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "employee_id": {
+            "type": "string",
+            "title": "Employee Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "employee_id",
+          "name",
+          "status"
+        ],
+        "title": "AgentPublic",
+        "description": "坐席公开档案（/agents/status 响应；不暴露 password_hash）。"
+      },
+      "AgentStatusUpdate": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "online",
+              "offline",
+              "break"
+            ],
+            "title": "Status",
+            "description": "在线/离线/小休"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "AgentStatusUpdate"
+      },
       "BusinessHallOut": {
         "properties": {
           "id": {
@@ -760,6 +1128,67 @@
         "title": "PlanOut",
         "description": "套餐目录项（结构化数据 / 资费表）。"
       },
+      "QueueItemOut": {
+        "properties": {
+          "conversation_id": {
+            "type": "integer",
+            "title": "Conversation Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Id"
+          },
+          "customer_phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Phone"
+          },
+          "last_user_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last User Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversation_id",
+          "status",
+          "created_at",
+          "customer_id",
+          "customer_phone",
+          "last_user_message"
+        ],
+        "title": "QueueItemOut",
+        "description": "待接入队列项：一条 Handed-off 待接入会话（US-20）。"
+      },
       "ReauthRequest": {
         "properties": {
           "service_password": {
@@ -792,6 +1221,145 @@
         ],
         "title": "ReauthResponse",
         "description": "办理执行复核通过后颁发的短期可执行凭证。"
+      },
+      "TicketCreate": {
+        "properties": {
+          "conversation_id": {
+            "type": "integer",
+            "title": "Conversation Id",
+            "description": "所属会话"
+          },
+          "ticket_type": {
+            "type": "string",
+            "enum": [
+              "transaction",
+              "ticketing"
+            ],
+            "title": "Ticket Type",
+            "description": "工单类型：transaction/ticketing"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "工单内容（办理事项描述 / 报修描述）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversation_id",
+          "ticket_type",
+          "content"
+        ],
+        "title": "TicketCreate",
+        "description": "创建工单请求（REST 客户侧；customer 自动取当前认证客户）。"
+      },
+      "TicketOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "conversation_id": {
+            "type": "integer",
+            "title": "Conversation Id"
+          },
+          "ticket_type": {
+            "type": "string",
+            "title": "Ticket Type"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Id"
+          },
+          "contact_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Name"
+          },
+          "contact_phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Phone"
+          },
+          "creator_type": {
+            "type": "string",
+            "title": "Creator Type"
+          },
+          "creator_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creator Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "conversation_id",
+          "ticket_type",
+          "status",
+          "content",
+          "customer_id",
+          "contact_name",
+          "contact_phone",
+          "creator_type",
+          "creator_id",
+          "created_at"
+        ],
+        "title": "TicketOut",
+        "description": "工单详情/列表项。customer 关联允许 null（Visitor 创建时仅联系方式）。"
+      },
+      "TicketStatusUpdate": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "目标状态（两状态机合法状态名）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "TicketStatusUpdate",
+        "description": "状态流转请求（PATCH /tickets/{id}，按工单类型状态机校验）。"
       },
       "TokenResponse": {
         "properties": {
