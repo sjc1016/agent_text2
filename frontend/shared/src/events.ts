@@ -44,7 +44,7 @@ export type WsEventName = (typeof WS_EVENT_NAMES)[number]
  *
  * TODO（后续切片）：
  *   - conversation 切片：细化 'llm.token'
- *   - agent 切片：细化 'handoff.start' | 'handoff.end' | 'agent.status'
+ *   - agent 切片：细化 'handoff.start' | 'handoff.end'（'agent.status' 已由 B9 细化）
  *   - transaction 切片：细化 'second.confirm' | 'reauth.required'
  */
 
@@ -94,6 +94,13 @@ export interface NotificationPushPayload {
   created_at: string // ISO 字符串
 }
 
+/** agent.status payload：坐席状态变更通知（PRD line 282，B9 镜像后端 AgentStatusPayload）。 */
+export interface AgentStatusPayload {
+  agent_id: number
+  status: 'online' | 'break' | 'offline' // 与 agent 前端 AgentStatus 三态一致
+  changed_at: string // ISO 字符串
+}
+
 export interface WsEventPayloadMap {
   'llm.token': Record<string, unknown>
   'message.new': MessageNewPayload
@@ -102,7 +109,7 @@ export interface WsEventPayloadMap {
   'ticket.update': TicketUpdatePayload
   'notification.push': NotificationPushPayload
   'system.message': SystemMessagePayload
-  'agent.status': Record<string, unknown>
+  'agent.status': AgentStatusPayload
   'conversation.state': ConversationStatePayload
   'second.confirm': Record<string, unknown>
   'reauth.required': Record<string, unknown>

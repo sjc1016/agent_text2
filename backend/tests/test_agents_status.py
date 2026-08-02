@@ -111,3 +111,29 @@ async def test_agent_status_with_customer_token_rejected(db_client, db):
     )
 
     assert response.status_code == 401
+
+
+async def test_agent_status_change_writes_audit(db_client, db):
+    """坐席状态切换写入审计日志（验收6：坐席操作留痕）。"""
+    from sqlalchemy import select
+
+    from app.models import AuditLog
+
+    agent = _create_agent(db, employee_id="A2003")
+    token = _agent_token(agent)
+
+    response = await db_client.put(
+        "/agents/status",
+        json={"status": "break"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+
+    db.expire_all()
+    logs = (
+        db.execute(select(AuditLog).where(AuditLog.action == "agent.status.update")).scalars().all()
+    )
+    assert len(logs) == 1
+    assert logs[0].actor_type == "agent"
+    assert logs[0].actor_id == agent.id
+    assert logs[0].detail == {"status": "break"}

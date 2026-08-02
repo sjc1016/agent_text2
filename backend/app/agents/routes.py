@@ -74,6 +74,13 @@ async def update_agent_status(
     """
     current.status = payload.status
     db.commit()
+    write_audit_log(
+        db,
+        actor_type="agent",
+        actor_id=current.id,
+        action="agent.status.update",
+        detail={"status": payload.status},
+    )
     db.refresh(current)
     await push_agent_status(current, payload.status)
     return current

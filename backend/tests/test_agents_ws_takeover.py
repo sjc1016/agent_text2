@@ -135,19 +135,21 @@ def test_agent_message_after_takeover_pushes_message_new_to_both(ws_client, db, 
             {"type": "message", "conversation_id": conv.id, "content": "您好，我是人工客服小张"}
         )
 
-        # 客户先收到 message.new（坐席消息）
+        # server 先回执坐席连接、再经 hub 推客户连接，按此顺序消费；
+        # 双连接接收统一用 recv_ws（规避 Windows 下 TestClient portal 唤醒丢失，见 conftest）。
+        # 坐席连接先收到 message.new
+        agent_event = recv_ws(agent_ws)
+        assert agent_event["event"] == "message.new"
+        assert agent_event["data"]["source"] == "agent"
+        assert agent_event["data"]["content"] == "您好，我是人工客服小张"
+
+        # 客户连接收到 message.new（用户视角「客服」）
         customer_event = recv_ws(customer_ws)
         assert customer_event["event"] == "message.new"
         payload = customer_event["data"]
         assert payload["conversation_id"] == conv.id
         assert payload["source"] == "agent"
         assert payload["content"] == "您好，我是人工客服小张"
-
-        # 坐席连接也收到 message.new
-        agent_event = recv_ws(agent_ws)
-        assert agent_event["event"] == "message.new"
-        assert agent_event["data"]["source"] == "agent"
-        assert agent_event["data"]["content"] == "您好，我是人工客服小张"
 
     # 消息已持久化
     from sqlalchemy import select
