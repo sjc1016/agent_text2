@@ -729,6 +729,145 @@
         }
       }
     },
+    "/inquiries/balance": {
+      "get": {
+        "tags": [
+          "inquiries"
+        ],
+        "summary": "Balance",
+        "description": "话费余额查询（US-3）。",
+        "operationId": "balance_inquiries_balance_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InquiryBalanceOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/inquiries/plan": {
+      "get": {
+        "tags": [
+          "inquiries"
+        ],
+        "summary": "Plan",
+        "description": "当前套餐详情查询（US-4）。",
+        "operationId": "plan_inquiries_plan_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InquiryPlanOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/inquiries/usage": {
+      "get": {
+        "tags": [
+          "inquiries"
+        ],
+        "summary": "Usage",
+        "description": "通话/流量使用量查询（US-5）。",
+        "operationId": "usage_inquiries_usage_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InquiryUsageOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/inquiries/contract": {
+      "get": {
+        "tags": [
+          "inquiries"
+        ],
+        "summary": "Contract",
+        "description": "合约到期时间查询（US-6）。",
+        "operationId": "contract_inquiries_contract_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InquiryContractOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/inquiries/value-added-services": {
+      "get": {
+        "tags": [
+          "inquiries"
+        ],
+        "summary": "Value Added Services",
+        "description": "已订购增值业务查询（US-7）。",
+        "operationId": "value_added_services_inquiries_value_added_services_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InquiryValueAddedOut"
+                  },
+                  "type": "array",
+                  "title": "Response Value Added Services Inquiries Value Added Services Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -983,6 +1122,159 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "InquiryBalanceOut": {
+        "properties": {
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          },
+          "balance": {
+            "type": "number",
+            "title": "Balance"
+          }
+        },
+        "type": "object",
+        "required": [
+          "phone",
+          "balance"
+        ],
+        "title": "InquiryBalanceOut",
+        "description": "话费余额（US-3）。"
+      },
+      "InquiryContractOut": {
+        "properties": {
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          },
+          "contract_expiry_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contract Expiry Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "phone",
+          "contract_expiry_date"
+        ],
+        "title": "InquiryContractOut",
+        "description": "合约到期时间（US-6）。"
+      },
+      "InquiryPlanOut": {
+        "properties": {
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          },
+          "plan_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Name"
+          },
+          "plan_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Price"
+          }
+        },
+        "type": "object",
+        "required": [
+          "phone",
+          "plan_name",
+          "plan_price"
+        ],
+        "title": "InquiryPlanOut",
+        "description": "当前套餐详情（US-4）。"
+      },
+      "InquiryUsageOut": {
+        "properties": {
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          },
+          "call_used": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Call Used"
+          },
+          "data_used": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Used"
+          }
+        },
+        "type": "object",
+        "required": [
+          "phone",
+          "call_used",
+          "data_used"
+        ],
+        "title": "InquiryUsageOut",
+        "description": "通话/流量使用量（US-5）。"
+      },
+      "InquiryValueAddedOut": {
+        "properties": {
+          "service_name": {
+            "type": "string",
+            "title": "Service Name"
+          },
+          "monthly_fee": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly Fee"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "service_name",
+          "monthly_fee",
+          "status"
+        ],
+        "title": "InquiryValueAddedOut",
+        "description": "已订购增值业务（US-7）。"
       },
       "KnowledgeDocumentOut": {
         "properties": {
