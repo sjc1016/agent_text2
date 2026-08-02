@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>智服 · 电信 AI 客服 Agent（LangChain）</title>
+<style>
+  :root{
+    --bg:#0d1117;
+    --panel:#141b24;
+    --panel-2:#1b2530;
+    --line:#233040;
+    --primary:#2dd4bf;       /* 薄荷绿 */
+    --primary-d:#14b8a6;
+    --blue:#38bdf8;          /* 天蓝 */
+    --coral:#fb7185;         /* 珊瑚橘 */
+    --cream:#fde68a;         /* 奶油黄 */
+    --txt:#e6edf3;
+    --txt-dim:#9aa7b4;
+    --txt-faint:#6b7886;
+    --radius:16px;
+    --shadow:0 10px 30px rgba(0,0,0,.35);
+    --mono:"SFMono-Regular",ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:radial-gradient(1200px 600px at 80% -10%,rgba(45,212,191,.10),transparent 60%),
+               radial-gradient(1000px 500px at 0% 110%,rgba(56,189,248,.10),transparent 55%),
+               var(--bg);
+    color:var(--txt);
+    -webkit-font-smoothing:antialiased;
+    overflow:hidden;
+  }
+  /* ---------- 顶栏 ---------- */
+  .topbar{
+    height:60px;display:flex;align-items:center;gap:14px;
+    padding:0 22px;border-bottom:1px solid var(--line);
+    background:rgba(20,27,36,.7);backdrop-filter:blur(12px);
+    position:relative;z-index:20;
+  }
+  .logo{display:flex;align-items:center;gap:11px;font-weight:700;font-size:17px;}
+  .logo .mark{
+    width:34px;height:34px;border-radius:10px;display:grid;place-items:center;
+    background:linear-gradient(135deg,var(--primary),var(--blue));
+    box-shadow:0 4px 14px rgba(45,212,191,.4);font-size:18px;
+  }
+  .logo small{display:block;font-weight:500;font-size:11px;color:var(--txt-dim);letter-spacing:.5px;}
+  .topbar .spacer{flex:1;}
+  .pill{
+    display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--txt-dim);
+    background:var(--panel-2);border:1px solid var(--line);padding:6px 12px;border-radius:999px;
+  }
+  .pill .dot{width:8px;height:8px;border-radius:50%;background:var(--primary);box-shadow:0 0 0 0 rgba(45,212,191,.6);animation:pulse 2s infinite;}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(45,212,191,.5);}70%{box-shadow:0 0 0 8px rgba(45,212,191,0);}100%{box-shadow:0 0 0 0 rgba(45,212,191,0);}}
+  .pill b{color:var(--txt);font-weight:600;}
+
+  /* ---------- 主体 ---------- */
+  .app{display:flex;height:calc(100% - 60px);}
+  .sidebar{
+    width:230px;flex-shrink:0;border-right:1px solid var(--line);
+    padding:18px 14px;display:flex;flex-direction:column;gap:6px;overflow-y:auto;
+  }
+  .nav-item{
+    display:flex;align-items:center;gap:11px;padding:11px 13px;border-radius:12px;
+    color:var(--txt-dim);cursor:pointer;font-size:14px;transition:.18s;border:1px solid transparent;
+  }
+  .nav-item:hover{background:var(--panel-2);color:var(--txt);}
+  .nav-item.active{background:linear-gradient(135deg,rgba(45,212,191,.16),rgba(56,189,248,.10));color:var(--txt);border-color:rgba(45,212,191,.35);}
+  .nav-item .ico{width:20px;text-align:center;font-size:16px;}
+  .side-foot{margin-top:auto;font-size:11px;color:var(--txt-faint);line-height:1.6;padding:10px;border-top:1px solid var(--line);}
+  .side-foot b{color:var(--txt-dim);}
+
+  .main{flex:1;display:flex;flex-direction:column;min-width:0;}
+
+  /* ---------- 视图通用 ---------- */
+  .view{display:none;flex:1;min-height:0;}
+  .view.active{display:flex;}
+
+  /* ---------- 对话视图 ---------- */
+  .chat-wrap{display:flex;flex:1;min-height:0;}
+  .chat{flex:1;display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--line);}
+  .chat-head{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;}
+  .chat-head .avatar{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,var(--primary-d),var(--blue));display:grid;place-items:center;font-size:20px;}
+  .chat-head h3{font-size:15px;}
+  .chat-head p{font-size:12px;color:var(--txt-dim);}
+
+  .messages{flex:1;overflow-y:auto;padding:22px 20px;display:flex;flex-direction:column;gap:16px;}
+  .msg{display:flex;gap:12px;max-width:80%;}
+  .msg .av{width:32px;height:32px;border-radius:9px;flex-shrink:0;display:grid;place-items:center;font-size:15px;}
+  .msg.bot .av{background:linear-gradient(135deg,var(--primary-d),var(--blue));}
+  .msg.user{align-self:flex-end;flex-direction:row-reverse;}
+  .msg.user .av{background:var(--panel-2);border:1px solid var(--line);}
+  .bubble{padding:12px 15px;border-radius:14px;font-size:14px;line-height:1.6;white-space:pre-wrap;word-break:break-word;}
+  .msg.bot .bubble{background:var(--panel-2);border:1px solid var(--line);border-top-left-radius:4px;}
+  .msg.user .bubble{background:linear-gradient(135deg,var(--primary),var(--blue));color:#04201c;border-top-right-radius:4px;font-weight:500;}
+  .bubble .toolcall{
+    margin-top:10px;font-family:var(--mono);font-size:12px;background:#0c1219;border:1px solid var(--line);
+    border-radius:9px;padding:8px 10px;color:var(--cream);
+  }
+  .bubble .toolcall .k{color:var(--blue);}
+
+  .suggest{display:flex;gap:8px;flex-wrap:wrap;padding:0 20px 8px;}
+  .chip{
+    font-size:12.5px;color:var(--txt-dim);background:var(--panel-2);border:1px solid var(--line);
+    padding:7px 12px;border-radius:999px;cursor:pointer;transition:.15s;
+  }
+  .chip:hover{border-color:var(--primary);color:var(--primary);transform:translateY(-1px);}
+
+  .composer{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:flex-end;}
+  .composer textarea{
+    flex:1;resize:none;background:var(--panel-2);border:1px solid var(--line);border-radius:12px;
+    color:var(--txt);padding:12px 14px;font-size:14px;font-family:inherit;line-height:1.5;max-height:120px;outline:none;
+  }
+  .composer textarea:focus{border-color:var(--primary);}
+  .send{
+    height:44px;padding:0 20px;border:none;border-radius:12px;cursor:pointer;font-size:14px;font-weight:600;color:#04201c;
+    background:linear-gradient(135deg,var(--primary),var(--blue));transition:.15s;
+  }
+  .send:hover{filter:brightness(1.08);transform:translateY(-1px);}
+  .send:disabled{opacity:.5;cursor:not-allowed;transform:none;}
+
+  /* ---------- 推理轨迹 ---------- */
+  .trace{width:340px;flex-shrink:0;display:flex;flex-direction:column;background:var(--panel);}
+  .trace-head{padding:14px 18px;border-bottom:1px solid var(--line);font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;}
+  .trace-head .tag{font-size:10px;font-family:var(--mono);color:var(--primary);background:rgba(45,212,191,.12);padding:2px 7px;border-radius:6px;}
+  .trace-body{flex:1;overflow-y:auto;padding:16px 16px 30px;}
+  .step{position:relative;padding:0 0 18px 28px;}
+  .step::before{content:"";position:absolute;left:9px;top:20px;bottom:-2px;width:2px;background:var(--line);}
+  .step:last-child::before{display:none;}
+  .step .node{position:absolute;left:0;top:1px;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:11px;background:var(--panel-2);border:1px solid var(--line);}
+  .step.thought .node{color:var(--blue);border-color:var(--blue);}
+  .step.action .node{color:var(--coral);border-color:var(--coral);}
+  .step.observe .node{color:var(--cream);border-color:var(--cream);}
+  .step.answer .node{color:var(--primary);border-color:var(--primary);}
+  .step .lab{font-size:11px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.5px;color:var(--txt-faint);margin-bottom:4px;}
+  .step .card{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:12.5px;line-height:1.55;color:var(--txt-dim);}
+  .step .card code{font-family:var(--mono);color:var(--cream);background:#0c1219;padding:1px 5px;border-radius:5px;font-size:11.5px;}
+  .step.answer .card{color:var(--txt);border-color:rgba(45,212,191,.4);}
+  .typing{display:flex;gap:5px;padding:6px 2px;}
+  .typing span{width:7px;height:7px;border-radius:50%;background:var(--txt-faint);animation:blink 1.2s infinite;}
+  .typing span:nth-child(2){animation-delay:.2s;}
+  .typing span:nth-child(3){animation-delay:.4s;}
+  @keyframes blink{0%,60%,100%{opacity:.3;}30%{opacity:1;}}
+
+  .empty{padding:40px 24px;text-align:center;color:var(--txt-faint);font-size:13px;line-height:1.8;}
+  .empty .big{font-size:34px;margin-bottom:10px;opacity:.6;}
+
+  /* ---------- 架构视图 ---------- */
+  .content{flex:1;overflow-y:auto;padding:26px 30px;}
+  .content h2{font-size:18px;margin-bottom:4px;}
+  .content .sub{color:var(--txt-dim);font-size:13px;margin-bottom:22px;}
+  .flow{display:flex;align-items:stretch;gap:0;flex-wrap:wrap;margin-bottom:26px;}
+  .node-box{
+    background:var(--panel-2);border:1px solid var(--line);border-radius:14px;padding:16px 18px;min-width:150px;max-width:200px;
+    position:relative;flex:1;
+  }
+  .node-box .ic{font-size:22px;margin-bottom:8px;}
+  .node-box h4{font-size:14px;margin-bottom:4px;}
+  .node-box p{font-size:12px;color:var(--txt-dim);line-height:1.5;}
+  .arrow{display:flex;align-items:center;color:var(--primary);font-size:20px;padding:0 6px;}
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;}
+  .card-box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;}
+  .card-box h4{font-size:14px;margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+  .card-box ul{list-style:none;display:flex;flex-direction:column;gap:8px;}
+  .card-box li{font-size:13px;color:var(--txt-dim);line-height:1.5;padding-left:16px;position:relative;}
+  .card-box li::before{content:"▹";position:absolute;left:0;color:var(--primary);}
+  .badge{display:inline-block;font-size:10.5px;font-family:var(--mono);padding:2px 8px;border-radius:6px;margin-left:6px;vertical-align:middle;}
+  .badge.r{background:rgba(251,113,133,.14);color:var(--coral);}
+  .badge.t{background:rgba(56,189,248,.14);color:var(--blue);}
+  .badge.k{background:rgba(253,230,138,.14);color:var(--cream);}
+
+  /* ---------- 工具 / 知识 ---------- */
+  .tgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:15px;}
+  .tcard{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;transition:.18s;position:relative;overflow:hidden;}
+  .tcard:hover{border-color:var(--primary);transform:translateY(-2px);box-shadow:var(--shadow);}
+  .tcard .top{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+  .tcard .ic{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;font-size:18px;background:var(--panel-2);border:1px solid var(--line);}
+  .tcard h4{font-size:14px;}
+  .tcard .fn{font-family:var(--mono);font-size:11px;color:var(--blue);}
+  .tcard p{font-size:12.5px;color:var(--txt-dim);line-height:1.55;}
+  .tcard .use{margin-top:12px;font-size:11px;color:var(--txt-faint);border-top:1px dashed var(--line);padding-top:8px;}
+  .tcard .stat{position:absolute;top:14px;right:14px;font-size:10px;font-family:var(--mono);color:var(--primary);}
+
+  .kgroup{margin-bottom:20px;}
+  .kgroup h4{font-size:14px;margin-bottom:10px;color:var(--cream);}
+  .kbar{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px 14px;margin-bottom:8px;}
+  .kbar .ic{font-size:18px;}
+  .kbar .meta{flex:1;}
+  .kbar .meta .t{font-size:13px;}
+  .kbar .meta .d{font-size:11.5px;color:var(--txt-dim);}
+  .kbar .cnt{font-family:var(--mono);font-size:12px;color:var(--primary);}
+
+  .sec-title{font-size:13px;font-weight:600;color:var(--txt-dim);text-transform:uppercase;letter-spacing:1px;margin:4px 0 14px;}
+  ::-webkit-scrollbar{width:9px;height:9px;}
+  ::-webkit-scrollbar-thumb{background:var(--line);border-radius:9px;}
+  ::-webkit-scrollbar-thumb:hover{background:#2f4154;}
+</style>
+</head>
+<body>
+  <!-- 顶栏 -->
+  <div class="topbar">
+    <div class="logo">
+      <div class="mark">📡</div>
+      <div>智服 · 电信 AI 客服 Agent<small>LangChain · RAG + Function Calling</small></div>
+    </div>
+    <div class="spacer"></div>
+    <div class="pill">用户 <b>138****8888</b></div>
+    <div class="pill">套餐 <b>5G 畅享 129</b></div>
+    <div class="pill"><span class="dot"></span> Agent 在线</div>
+  </div>
+
+  <div class="app">
+    <!-- 侧边导航 -->
+    <div class="sidebar">
+      <div class="nav-item active" data-view="chat"><span class="ico">💬</span> 智能对话</div>
+      <div class="nav-item" data-view="arch"><span class="ico">🧩</span> Agent 架构</div>
+      <div class="nav-item" data-view="tools"><span class="ico">🛠️</span> 工具中心</div>
+      <div class="nav-item" data-view="kb"><span class="ico">📚</span> 知识库 RAG</div>
+      <div class="side-foot">
+        <b>技术栈</b><br/>
+        LangChain Agent (ReAct)<br/>
+        LLM + 向量检索 + 工具调用<br/>
+        本页为<strong>高保真原型</strong>，对话由前端模拟引擎演示推理链路。
+      </div>
+    </div>
+
+    <!-- 主区 -->
+    <div class="main">
+      <!-- 对话视图 -->
+      <div class="view active" id="view-chat">
+        <div class="chat-wrap">
+          <div class="chat">
+            <div class="chat-head">
+              <div class="avatar">🤖</div>
+              <div>
+                <h3>电信智能客服 · 小智</h3>
+                <p>基于 LangChain Agent 构建，支持余额/流量/套餐查询、业务办理与故障报修</p>
+              </div>
+            </div>
+            <div class="messages" id="messages">
+              <div class="msg bot">
+                <div class="av">🤖</div>
+                <div class="bubble">您好，我是您的专属 AI 客服小智 👋\n我可以帮您查余额、查流量、看套餐、办业务，也能解答网络故障等问题。您想先了解什么？</div>
+              </div>
+            </div>
+            <div class="suggest" id="suggest">
+              <div class="chip">我这个月还剩多少流量？</div>
+              <div class="chip">帮我查一下账户余额</div>
+              <div class="chip">我现在用的什么套餐？</div>
+              <div class="chip">家里宽带连不上怎么办</div>
+              <div class="chip">我想开通视频会员</div>
+            </div>
+            <div class="composer">
+              <textarea id="input" rows="1" placeholder="输入您的问题，例如：我的流量还剩多少…"></textarea>
+              <button class="send" id="send">发送</button>
+            </div>
+          </div>
+
+          <!-- 推理轨迹 -->
+          <div class="trace">
+            <div class="trace-head">🧠 推理轨迹 (ReAct) <span class="tag">langchain</span></div>
+            <div class="trace-body" id="trace">
+              <div class="empty">
+                <div class="big">🔍</div>
+                发送消息后，这里会实时展示 Agent 的<br/>思考 → 调用工具 → 观察 → 回答 全过程。
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 架构视图 -->
+      <div class="view" id="view-arch">
+        <div class="content">
+          <h2>Agent 架构设计</h2>
+          <p class="sub">采用 LangChain 的 ReAct Agent 范式，将「语言理解」与「业务系统」通过工具层解耦。</p>
+
+          <div class="flow">
+            <div class="node-box">
+              <div class="ic">👤</div>
+              <h4>用户输入</h4>
+              <p>自然语言问句，如「查余额」「宽带坏了」</p>
+            </div>
+            <div class="arrow">→</div>
+            <div class="node-box">
+              <div class="ic">🧠</div>
+              <h4>LLM 推理核心</h4>
+              <p>意图识别 + ReAct 决策，决定调用哪个工具或检索知识库</p>
+            </div>
+            <div class="arrow">→</div>
+            <div class="node-box">
+              <div class="ic">🛠️</div>
+              <h4>工具 / 函数</h4>
+              <p>FunctionCalling 对接 BSS/OSS 业务系统 API</p>
+            </div>
+            <div class="arrow">→</div>
+            <div class="node-box">
+              <div class="ic">📚</div>
+              <h4>RAG 知识库</h4>
+              <p>向量检索 FAQ / 资费规则 / 排障手册</p>
+            </div>
+            <div class="arrow">→</div>
+            <div class="node-box">
+              <div class="ic">💬</div>
+              <h4>结构化回答</h4>
+              <p>结合工具结果生成口语化、可追溯的回复</p>
+            </div>
+          </div>
+
+          <div class="grid2">
+            <div class="card-box">
+              <h4>🧩 核心组件 <span class="badge t">LangChain</span></h4>
+              <ul>
+                <li><b>AgentExecutor</b>：驱动 ReAct 循环，管理 Thought/Action/Observation</li>
+                <li><b>Tool</b>：每个业务能力封装为 @tool 函数，含名称、描述、参数 schema</li>
+                <li><b>RetrievalQA</b>：知识库问答链，向量召回 top-k 片段</li>
+                <li><b>Memory</b>：ConversationBufferWindowMemory 维持多轮上下文</li>
+                <li><b>Prompt Template</b>：约束 Agent 仅用工具获取实时数据，杜绝幻觉</li>
+              </ul>
+            </div>
+            <div class="card-box">
+              <h4>🛡️ 关键设计点</h4>
+              <ul>
+                <li><b>实时数据不靠记忆</b>：余额/流量等动态数据一律走工具，模型只负责组织语言</li>
+                <li><b>工具描述即提示</b>：清晰的工具 docstring 决定路由准确率</li>
+                <li><b>失败兜底</b>：工具异常时回退 RAG 通用话术 + 转人工入口</li>
+                <li><b>可追溯</b>：每轮回答附带调用链，便于审计与质检</li>
+                <li><b>权限校验</b>：敏感操作（销户/改套餐）二次确认 + 身份核验</li>
+              </ul>
+            </div>
+            <div class="card-box">
+              <h4>⚡ ReAct 循环示例</h4>
+              <ul>
+                <li><b>Thought</b>：用户询问剩余流量，需查实时用量</li>
+                <li><b>Action</b>：query_data_usage(user_id)</li>
+                <li><b>Observation</b>：剩余 12.3GB / 30GB</li>
+                <li><b>Thought</b>：数据已获取，组织友好回答</li>
+                <li><b>Final Answer</b>：您本月剩余流量 12.3GB…</li>
+              </ul>
+            </div>
+            <div class="card-box">
+              <h4>📈 预期收益</h4>
+              <ul>
+                <li>高频查询类工单 <b>自助率 ↑ 70%</b></li>
+                <li>平均响应时间 <b>&lt; 2s</b>，无需排队</li>
+                <li>7×24 在线，夜间高峰兜底</li>
+                <li>人工客服聚焦复杂投诉与挽留</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 工具中心 -->
+      <div class="view" id="view-tools">
+        <div class="content">
+          <h2>工具中心（Function Calling）</h2>
+          <p class="sub">每个工具对应一个后端业务能力，由 LangChain Agent 按意图自动调度。括号内为工具函数名。</p>
+          <div class="tgrid" id="toolGrid"></div>
+        </div>
+      </div>
+
+      <!-- 知识库 -->
+      <div class="view" id="view-kb">
+        <div class="content">
+          <h2>知识库 RAG</h2>
+          <p class="sub">静态业务知识通过向量化检索注入上下文，弥补大模型对资费规则、排障流程的时效性盲区。</p>
+          <div class="kgroup">
+            <div class="sec-title">📦 知识来源</div>
+            <div id="kbSources"></div>
+          </div>
+          <div class="kgroup">
+            <div class="sec-title">🔁 检索流程</div>
+            <div class="card-box">
+              <ul>
+                <li><b>切分</b>：文档按语义块切分（chunk ≈ 512 tokens），重叠 64 tokens</li>
+                <li><b>向量化</b>：bge-large-zh 嵌入 → 存储于向量数据库（如 Milvus / pgvector）</li>
+                <li><b>召回</b>：用户问题向量 top-k=4 相似片段</li>
+                <li><b>重排</b>：Cross-Encoder 重排，取 top-2 注入 Prompt</li>
+                <li><b>生成</b>：RetrievalQA 结合片段与问题生成答案并标注引用来源</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* ===================== 数据层 ===================== */
+const ACCOUNT = {
+  phone:"138****8888",
+  package:"5G 畅享套餐 129 元档",
+  balance:"¥38.50",
+  dataTotal:"30 GB", dataUsed:"17.7 GB", dataLeft:"12.3 GB",
+  callUsed:"120 分钟", points:"2580"
+};
+const TOOLS = [
+  {ic:"💰",name:"账户余额查询",fn:"query_balance(user_id)",desc:"读取计费系统实时账户可用余额与欠费状态。",use:"触发词：余额、话费、欠费、还剩多少钱"},
+  {ic:"📶",name:"流量/用量查询",fn:"query_data_usage(user_id)",desc:"返回当月流量、通话、短信的已用/剩余额度。",use:"触发词：流量、用了多少、剩余、套餐余量"},
+  {ic:"📋",name:"套餐详情查询",fn:"query_package(user_id)",desc:"返回当前套餐资费、包含权益与合约到期日。",use:"触发词：套餐、资费、什么卡、合约"},
+  {ic:"🧾",name:"账单查询",fn:"query_bill(user_id, month)",desc:"拉取指定月份账单明细与发票状态。",use:"触发词：账单、发票、上月消费、明细"},
+  {ic:"🛠️",name:"故障报修/工单",fn:"create_ticket(user_id, issue)",desc:"创建宽带/网络故障工单并派单至属地运维。",use:"触发词：故障、没信号、断网、报修、投诉"},
+  {ic:"➕",name:"增值业务办理",fn:"subscribe_service(user_id, svc)",desc:"开通视频会员、云盘等增值包，含二次确认。",use:"触发词：办理、开通、会员、增值、加购"},
+  {ic:"📚",name:"知识库检索",fn:"knowledge_search(query)",desc:"RAG 检索 FAQ、资费规则、排障手册等静态知识。",use:"兜底：政策、规则、怎么办类通用问题"},
+  {ic:"👨‍💼",name:"转人工",fn:"handoff_to_human(user_id)",desc:"高敏或复杂诉求一键转接人工坐席。",use:"触发词：人工、客服、投诉升级"}
+];
+const KB = [
+  {ic:"📑",t:"资费与套餐规则库",d:"各档套餐资费、限速阈值、合约期与违约金说明",cnt:"1,284 条"},
+  {ic:"🛠️",t:"故障排查手册",d:"宽带断网、信号弱、VoLTE 失败等标准排障 SOP",cnt:"642 条"},
+  {ic:"🎁",t:"营销活动与权益",d:"在售优惠、积分兑换、老用户回馈活动说明",cnt:"358 条"},
+  {ic:"📜",t:"业务办理指引",d:"过户、销户、携号转网等政策与所需材料",cnt:"211 条"},
+  {ic:"🛡️",t:"服务规范与话术",d:"投诉处理时效、赔偿标准、文明服务用语",cnt:"176 条"}
+];
+
+/* ===================== 渲染工具/知识库 ===================== */
+const toolGrid = document.getElementById('toolGrid');
+TOOLS.forEach((t,i)=>{
+  const el=document.createElement('div');el.className='tcard';
+  el.innerHTML=`<div class="stat">#0${i+1}</div>
+    <div class="top"><div class="ic">${t.ic}</div><div><h4>${t.name}</h4><div class="fn">${t.fn}</div></div></div>
+    <p>${t.desc}</p><div class="use">${t.use}</div>`;
+  toolGrid.appendChild(el);
+});
+const kbSources=document.getElementById('kbSources');
+KB.forEach(k=>{
+  const el=document.createElement('div');el.className='kbar';
+  el.innerHTML=`<div class="ic">${k.ic}</div><div class="meta"><div class="t">${k.t}</div><div class="d">${k.d}</div></div><div class="cnt">${k.cnt}</div>`;
+  kbSources.appendChild(el);
+});
+
+/* ===================== 导航切换 ===================== */
+document.querySelectorAll('.nav-item').forEach(n=>{
+  n.onclick=()=>{
+    document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    n.classList.add('active');
+    document.getElementById('view-'+n.dataset.view).classList.add('active');
+  };
+});
+
+/* ===================== 对话 + 模拟 Agent 引擎 ===================== */
+const messages=document.getElementById('messages');
+const trace=document.getElementById('trace');
+const input=document.getElementById('input');
+const send=document.getElementById('send');
+
+function addMsg(role,html){
+  const m=document.createElement('div');m.className='msg '+role;
+  m.innerHTML=`<div class="av">${role==='bot'?'🤖':'🙂'}</div><div class="bubble">${html}</div>`;
+  messages.appendChild(m);messages.scrollTop=messages.scrollHeight;return m;
+}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+function addTraceStep(cls,lab,html){
+  const s=document.createElement('div');s.className='step '+cls;
+  s.innerHTML=`<div class="node">${cls==='thought'?'💭':cls==='action'?'🔧':cls==='observe'?'👀':'💡'}</div>
+    <div class="lab">${lab}</div><div class="card">${html}</div>`;
+  trace.appendChild(s);trace.scrollTop=trace.scrollHeight;return s;
+}
+
+// 意图识别 + 工具路由（模拟 LLM 决策）
+function decide(text){
+  const t=text.toLowerCase();
+  if(/(余额|话费|欠费|还剩多少钱|没钱了)/.test(text)) return {tool:'query_balance',label:'账户余额'};
+  if(/(流量|用了多少|剩余|套餐余量|数据)/.test(text)) return {tool:'query_data_usage',label:'流量用量'};
+  if(/(套餐|资费|什么卡|合约|档)/.test(text)) return {tool:'query_package',label:'套餐详情'};
+  if(/(账单|发票|上月|消费|明细)/.test(text)) return {tool:'query_bill',label:'账单查询'};
+  if(/(故障|没信号|断网|连不上|报修|投诉|卡顿|慢)/.test(text)) return {tool:'create_ticket',label:'故障报修'};
+  if(/(办理|开通|会员|增值|加购|订阅)/.test(text)) return {tool:'subscribe_service',label:'增值办理'};
+  if(/(人工|客服|转接)/.test(text)) return {tool:'handoff_to_human',label:'转人工'};
+  return {tool:'knowledge_search',label:'知识库检索'};
+}
+function toolResult(tool){
+  switch(tool){
+    case 'query_balance': return `账户可用余额 <code>${ACCOUNT.balance}</code>，无欠费，状态正常。`;
+    case 'query_data_usage': return `当月流量 已用 <code>${ACCOUNT.dataUsed}</code> / 共 ${ACCOUNT.dataTotal}，剩余 <code>${ACCOUNT.dataLeft}</code>；通话已用 ${ACCOUNT.callUsed}；积分 ${ACCOUNT.points}。`;
+    case 'query_package': return `当前套餐：<code>${ACCOUNT.package}</code>。含 30GB 流量 + 500 分钟通话 + 宽带 500M，合约 2026-03 到期。`;
+    case 'query_bill': return `上月账单合计 <code>¥129.00</code>（套餐月租），已结清，电子发票可于「中国电信」App 下载。`;
+    case 'create_ticket': return `已创建故障工单 <code>#GD20250801-7741</code>，属地运维将在 2 小时内回电排查，工单进度可随时问我。`;
+    case 'subscribe_service': return `检测到您要开通增值业务，涉及付费，已发起<strong>二次确认</strong>：确认开通「视频会员月包 ¥15/月」吗？回复「确认」即办理。`;
+    case 'handoff_to_human': return `正在为您转接人工坐席……已为您排队，当前前方 2 人，预计等待 1 分钟。`;
+    default: return `已从知识库检索到相关说明：此类问题通常可通过「中国电信」App 自助办理，或拨打 10000 获取人工协助。`;
+  }
+}
+function finalAnswer(tool,text){
+  switch(tool){
+    case 'query_balance': return `为您查到啦 ✅ 您当前账户余额是 **${ACCOUNT.balance}**，没有欠费，可以放心使用～`;
+    case 'query_data_usage': return `帮您看了下 📶 本月流量已用 ${ACCOUNT.dataUsed}，还剩 **${ACCOUNT.dataLeft}**，够用到月底；通话用了 ${ACCOUNT.callUsed}，积分攒到 ${ACCOUNT.points} 啦，可以在积分商城换权益哦。`;
+    case 'query_package': return `您现在用的是 **${ACCOUNT.package}** 📋 包含 30GB 流量、500 分钟通话和 500M 宽带，合约到 2026 年 3 月。需要我帮您对比其他档位吗？`;
+    case 'query_bill': return `查到上月账单合计 **¥129.00**（套餐月租），已结清 ✅ 电子发票可在「中国电信」App → 账单 → 开票 自助下载。`;
+    case 'create_ticket': return `别着急 🙌 已为您提交故障工单 **#GD20250801-7741**，属地运维会优先联系您排查。期间您可以先重启一下光猫试试～进度随时问我。`;
+    case 'subscribe_service': return `收到，开通增值业务需要走一下安全确认 🔐 我先帮您生成了待确认订单，您回复「确认」我就立刻办理，绝不擅自扣费。`;
+    case 'handoff_to_human': return `好的，已为您接入人工通道 👨‍💼 请稍候，马上有人工客服为您服务。`;
+    default: return `关于您说的这个问题，我查了下知识库：一般可通过「中国电信」App 自助处理，或者拨打 10000 转人工。您方便说下具体是哪一项吗？我帮您精准定位 🔍`;
+  }
+}
+
+async function runAgent(text){
+  const d=decide(text);
+  trace.innerHTML='';
+  // Thought
+  await sleep(350);
+  addTraceStep('thought','Thought',`识别到用户意图为「${d.label}」，需调用工具获取实时/权威数据，而非凭记忆作答。`);
+  // Action
+  await sleep(500);
+  const toolObj=TOOLS.find(t=>t.fn.startsWith(d.tool));
+  addTraceStep('action','Action',`调用 <code>${toolObj.fn}</code>`);
+  // Observation
+  await sleep(600);
+  addTraceStep('observe','Observation',toolResult(d.tool));
+  // Thought2
+  await sleep(400);
+  addTraceStep('thought','Thought',`数据已返回，组织为口语化、带情感温度的回复并标注关键信息。`);
+  // Answer（流式出现）
+  await sleep(500);
+  const ansStep=addTraceStep('answer','Final Answer','');
+  const ans=finalAnswer(d.tool,text);
+  // 气泡同时出现
+  const botMsg=addMsg('bot', '<span class="toolcall">🔧 调用工具：<span class="k">'+toolObj.fn+'</span></span><br/>'+ans.replace(/\*\*(.*?)\*\*/g,'<b>$1</b>'));
+  // 轨迹里也写答案
+  let i=0;const plain=ans.replace(/\*\*/g,'');
+  const iv=setInterval(()=>{ansStep.querySelector('.card').textContent=plain.slice(0,++i*3);if(i*3>=plain.length)clearInterval(iv);},18);
+}
+
+let busy=false;
+async function submit(){
+  if(busy)return;
+  const text=input.value.trim();
+  if(!text)return;
+  busy=true;send.disabled=true;
+  addMsg('user',text.replace(/\n/g,'<br/>'));
+  input.value='';input.style.height='auto';
+  // 打字指示
+  const typing=document.createElement('div');typing.className='msg bot';
+  typing.innerHTML=`<div class="av">🤖</div><div class="bubble"><div class="typing"><span></span><span></span><span></span></div></div>`;
+  messages.appendChild(typing);messages.scrollTop=messages.scrollHeight;
+  try{ await runAgent(text); }finally{
+    typing.remove();busy=false;send.disabled=false;input.focus();
+  }
+}
+send.onclick=submit;
+input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();submit();}});
+input.addEventListener('input',()=>{input.style.height='auto';input.style.height=Math.min(input.scrollHeight,120)+'px';});
+document.querySelectorAll('#suggest .chip').forEach(c=>c.onclick=()=>{input.value=c.textContent;submit();});
+</script>
+</body>
+</html>

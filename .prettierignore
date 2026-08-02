@@ -1,0 +1,17 @@
+# prettier 只管前端源码与根 JS/JSON 配置；以下全部排除
+.trae
+docs
+backend
+scripts
+AGENTS.md
+CONTEXT.md
+*.md
+*.html
+*.yaml
+*.yml
+*.ini
+pnpm-lock.yaml
+node_modules
+dist
+coverage
+.venv

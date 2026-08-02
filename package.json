@@ -1,0 +1,22 @@
+{
+  "name": "telecom-cs-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "电信客服 Agent v1 — monorepo 根（前端 pnpm workspace + 后端 uv）",
+  "scripts": {
+    "test": "pnpm -r test",
+    "build": "pnpm -r build",
+    "type-check": "pnpm -r type-check",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check:ws-events": "python scripts/check_ws_events.py"
+  },
+  "devDependencies": {
+    "@vue/eslint-config-prettier": "^10.2.0",
+    "@vue/eslint-config-typescript": "^14.9.0",
+    "eslint": "^10.8.0",
+    "eslint-plugin-vue": "^10.10.0",
+    "prettier": "^3.9.6"
+  }
+}

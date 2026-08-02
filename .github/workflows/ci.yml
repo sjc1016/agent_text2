@@ -1,0 +1,99 @@
+# F0 循环6：CI 8 阶段门禁（issue #2 / PRD › CI pipeline）。
+#
+# 8 阶段映射：
+#   lint / format-check / type-check / test / integration-test / build
+#   / openapi-sync / alembic-check
+# 外加循环5 的 ws-events 一致性校验。按语言分两个 job 并行，分支保护要求两者通过。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: backend (lint/format/type/test/integration/openapi/alembic/ws-events)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: lint (ruff check)
+        run: uv run ruff check .
+
+      - name: format-check (ruff format)
+        run: uv run ruff format --check .
+
+      - name: type-check (mypy)
+        run: uv run mypy app tests
+
+      - name: test (unit, not integration)
+        run: uv run pytest -m "not integration" -q
+
+      - name: integration-test
+        run: uv run pytest -m integration -q
+
+      - name: openapi-sync
+        run: uv run python ../scripts/openapi_sync.py --check
+
+      - name: alembic-check
+        run: uv run python ../scripts/check_alembic.py
+
+      - name: ws-events-check
+        run: uv run python ../scripts/check_ws_events.py
+
+  frontend:
+    name: frontend (lint/format/type/test/build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: lint (eslint)
+        run: pnpm lint
+
+      - name: format-check (prettier)
+        run: pnpm format:check
+
+      - name: type-check (vue-tsc/tsc)
+        run: pnpm type-check
+
+      - name: test (vitest)
+        run: pnpm test
+
+      - name: build (vite)
+        run: pnpm build

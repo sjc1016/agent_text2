@@ -1,0 +1,16 @@
+{
+  "name": "shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "前后端共享类型（WS 事件契约 events.ts SSOT 等）",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  }
+}

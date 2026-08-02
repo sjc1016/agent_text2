@@ -1,0 +1,7 @@
+packages:
+  - "frontend/customer"
+  - "frontend/agent"
+  - "frontend/shared"
+
+onlyBuiltDependencies:
+  - esbuild

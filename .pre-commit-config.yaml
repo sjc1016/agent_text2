@@ -1,0 +1,29 @@
+# F0 循环6：多语言 pre-commit hooks（Python ruff + 前端 eslint/prettier）。
+# mypy / openapi-sync / alembic-check 较慢，放 CI 流水线，不进 pre-commit。
+# 安装：pre-commit install（需先 pip install pre-commit）
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.1
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^backend/.*\.py$
+      - id: ruff-format
+        files: ^backend/.*\.py$
+
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint (frontend)
+        entry: pnpm exec eslint
+        language: system
+        types_or: [ts, vue]
+        files: ^frontend/.*\.(ts|vue)$
+        pass_filenames: true
+      - id: prettier
+        name: prettier (frontend)
+        entry: pnpm exec prettier --write
+        language: system
+        types_or: [ts, vue, json]
+        files: ^frontend/.*
+        pass_filenames: true
