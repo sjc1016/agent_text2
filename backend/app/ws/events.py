@@ -81,3 +81,44 @@ class ConversationStatePayload(BaseModel):
     old_state: str
     new_state: str
     changed_at: datetime
+
+
+class TicketUpdatePayload(BaseModel):
+    """ticket.update 事件 payload（工单状态变化通知，PRD line 282）。
+
+    每次合法状态流转推送；old_status 供前端做状态差量展示
+    （与 REST TicketOut 状态字段镜像，snake_case）。
+    """
+
+    id: int
+    conversation_id: int
+    ticket_type: str
+    status: str
+    old_status: str
+    changed_at: datetime
+
+
+class NotificationPushPayload(BaseModel):
+    """notification.push 事件 payload（站内通知，PRD line 282）。
+
+    触发态：办理类生效/失败、工单类派单/关闭（CONTEXT › 通知）；
+    read 标记未读/已读，供 UI-C-4 通知预览条消费。
+    """
+
+    id: int
+    ticket_id: int
+    message: str
+    read: bool
+    created_at: datetime
+
+
+class AgentStatusPayload(BaseModel):
+    """agent.status 事件 payload（坐席状态变更通知，PRD line 282；US-30）。
+
+    坐席切换在线/离线/小休时经 WS 推送；status ∈ online/offline/break
+    （与前端 AgentStatus 三态镜像）。
+    """
+
+    agent_id: int
+    status: str
+    changed_at: datetime

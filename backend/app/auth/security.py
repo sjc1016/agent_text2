@@ -13,7 +13,7 @@ import jwt
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import Customer
+from app.models import Customer, User
 
 _settings = get_settings()
 
@@ -61,6 +61,25 @@ def create_execute_token(customer_id: int) -> str:
     )
 
 
+def create_agent_access_token(agent_id: int) -> str:
+    """坐席 access token（2h，type=agent_access，与客户 access 区分主体）。
+
+    PRD 依据：实现决策 › API 契约 /agents/login；B9（issue #15）坐席登录。
+    agent_access 类型让 REST / WS 鉴权能区分客户与坐席两个主体
+    （get_current_agent 只放行 agent_access，get_current_customer 只放行 access）。
+    """
+    return _create_token(
+        str(agent_id), timedelta(minutes=_settings.access_token_expire_minutes), "agent_access"
+    )
+
+
+def create_agent_refresh_token(agent_id: int) -> str:
+    """坐席 refresh token（7d，type=agent_refresh；与客户 refresh 区分主体）。"""
+    return _create_token(
+        str(agent_id), timedelta(days=_settings.refresh_token_expire_days), "agent_refresh"
+    )
+
+
 def decode_token(token: str) -> dict[str, object]:
     """解码并校验 JWT；非法/过期抛 jwt 异常（由调用方转 HTTP 401）。"""
     return jwt.decode(token, _settings.jwt_secret, algorithms=[_settings.jwt_algorithm])
@@ -69,3 +88,8 @@ def decode_token(token: str) -> dict[str, object]:
 def get_customer_by_id(db: Session, customer_id: int) -> Customer | None:
     """按主键查客户（供鉴权依赖复用）。"""
     return db.get(Customer, customer_id)
+
+
+def get_agent_by_id(db: Session, agent_id: int) -> User | None:
+    """按主键查坐席账号（供坐席鉴权依赖与 WS 解析复用）。"""
+    return db.get(User, agent_id)

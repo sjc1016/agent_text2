@@ -42,13 +42,17 @@ async def test_list_conversations_unauthenticated_returns_401(db_client):
 
 
 async def test_list_conversations_returns_only_own_conversations(db_client, db):
-    from app.models import Conversation
+    from app.models import Conversation, Customer
 
     customer, token = await _login(db_client, db, phone="13900000011")
+    # 他人客户（真实存在，满足 FK 约束）
+    other_customer = Customer(phone="13900000014", service_password_hash=_hash_password("svc12345"))
+    db.add(other_customer)
+    db.commit()
     # 自己的会话
     db.add(Conversation(customer_id=customer.id, status="authenticated"))
     # 他人的会话
-    db.add(Conversation(customer_id=customer.id + 999, status="authenticated"))
+    db.add(Conversation(customer_id=other_customer.id, status="authenticated"))
     db.commit()
 
     response = await db_client.get(
@@ -100,11 +104,15 @@ async def test_get_messages_returns_history_ordered(db_client, db):
 
 
 async def test_get_messages_other_customer_conversation_returns_404(db_client, db):
-    from app.models import Conversation
+    from app.models import Conversation, Customer
 
     customer, token = await _login(db_client, db, phone="13900000013")
+    # 他人客户（真实存在，满足 FK 约束）
+    other_customer = Customer(phone="13900000015", service_password_hash=_hash_password("svc12345"))
+    db.add(other_customer)
+    db.commit()
     # 他人会话（不属于当前客户）
-    other = Conversation(customer_id=customer.id + 999, status="authenticated")
+    other = Conversation(customer_id=other_customer.id, status="authenticated")
     db.add(other)
     db.commit()
 

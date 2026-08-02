@@ -40,12 +40,15 @@ class Conversation(Base):
 
     customer_id 允许 null（访客未认证时也能发起会话，CONTEXT › 会话）；
     认证后回填 Customer 绑定。status 为状态机当前态（循环6 实现流转）。
+    agent_id 允许 null：handed_off 后由坐席接入（take_over）回填；
+    agent_id 为空即「待接入」（B9 /agents/queues 队列判定，US-20）。
     """
 
     __tablename__ = "conversations"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"), nullable=True)
+    agent_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False, server_default="unauthenticated")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 

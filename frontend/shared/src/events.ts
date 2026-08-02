@@ -44,9 +44,8 @@ export type WsEventName = (typeof WS_EVENT_NAMES)[number]
  *
  * TODO（后续切片）：
  *   - conversation 切片：细化 'llm.token'
- *   - ticket 切片：细化 'ticket.update' | 'second.confirm' | 'reauth.required'
  *   - agent 切片：细化 'handoff.start' | 'handoff.end' | 'agent.status'
- *   - notification 切片：细化 'notification.push'
+ *   - transaction 切片：细化 'second.confirm' | 'reauth.required'
  */
 
 /** 会话状态机全部合法状态名（PRD line 286）。 */
@@ -76,13 +75,32 @@ export interface ConversationStatePayload {
   changed_at: string // ISO 字符串
 }
 
+/** ticket.update payload：工单状态变化通知（PRD line 282，B7 镜像后端 TicketUpdatePayload）。 */
+export interface TicketUpdatePayload {
+  id: number
+  conversation_id: number
+  ticket_type: 'transaction' | 'ticketing'
+  status: string
+  old_status: string
+  changed_at: string // ISO 字符串
+}
+
+/** notification.push payload：站内通知（PRD line 282，B7 镜像后端 NotificationPushPayload）。 */
+export interface NotificationPushPayload {
+  id: number
+  ticket_id: number
+  message: string
+  read: boolean
+  created_at: string // ISO 字符串
+}
+
 export interface WsEventPayloadMap {
   'llm.token': Record<string, unknown>
   'message.new': MessageNewPayload
   'handoff.start': Record<string, unknown>
   'handoff.end': Record<string, unknown>
-  'ticket.update': Record<string, unknown>
-  'notification.push': Record<string, unknown>
+  'ticket.update': TicketUpdatePayload
+  'notification.push': NotificationPushPayload
   'system.message': SystemMessagePayload
   'agent.status': Record<string, unknown>
   'conversation.state': ConversationStatePayload
