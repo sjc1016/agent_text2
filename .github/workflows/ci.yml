@@ -73,7 +73,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'  # pnpm 11.18 需 Node >= 22.13（node:sqlite 内置模块）
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
