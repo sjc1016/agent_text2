@@ -154,8 +154,9 @@ def test_ws_message_new_rejects_other_customer_conversation(ws_client, db):
 
     customer = _create_customer(db, phone="13900000034")
     token = create_access_token(customer.id)
-    # 他人会话
-    other = Conversation(customer_id=customer.id + 999, status="authenticated")
+    # 他人会话（真实客户行以满足外键约束）
+    other_customer = _create_customer(db, phone="13900000035")
+    other = Conversation(customer_id=other_customer.id, status="authenticated")
     db.add(other)
     db.commit()
 

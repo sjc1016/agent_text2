@@ -204,6 +204,231 @@
         }
       }
     },
+    "/general-info/search": {
+      "get": {
+        "tags": [
+          "general-info"
+        ],
+        "summary": "Search",
+        "description": "RAG 检索知识库（政策/规则/手册）；无匹配返回空列表（不编造）。",
+        "operationId": "search_general_info_search_get",
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Query"
+            }
+          },
+          {
+            "name": "k",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 3,
+              "title": "K"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KnowledgeDocumentOut"
+                  },
+                  "title": "Response Search General Info Search Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/general-info/plans": {
+      "get": {
+        "tags": [
+          "general-info"
+        ],
+        "summary": "Plans",
+        "description": "套餐目录查询（结构化数据）：?names=a&names=b 或 ?name=x 过滤。",
+        "operationId": "plans_general_info_plans_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Names"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PlanOut"
+                  },
+                  "title": "Response Plans General Info Plans Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/general-info/coverage": {
+      "get": {
+        "tags": [
+          "general-info"
+        ],
+        "summary": "Coverage",
+        "description": "网络覆盖查询（结构化数据）：按区域名模糊匹配。",
+        "operationId": "coverage_general_info_coverage_get",
+        "parameters": [
+          {
+            "name": "area",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Area"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CoverageAreaOut"
+                  },
+                  "title": "Response Coverage General Info Coverage Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/general-info/halls": {
+      "get": {
+        "tags": [
+          "general-info"
+        ],
+        "summary": "Halls",
+        "description": "营业厅查询（结构化数据）：按行政区过滤。",
+        "operationId": "halls_general_info_halls_get",
+        "parameters": [
+          {
+            "name": "district",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "District"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BusinessHallOut"
+                  },
+                  "title": "Response Halls General Info Halls Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -229,6 +454,59 @@
   },
   "components": {
     "schemas": {
+      "BusinessHallOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "district": {
+            "type": "string",
+            "title": "District"
+          },
+          "address": {
+            "type": "string",
+            "title": "Address"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "business_hours": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business Hours"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "district",
+          "address",
+          "phone",
+          "business_hours"
+        ],
+        "title": "BusinessHallOut",
+        "description": "营业厅项（名称/行政区/地址/营业时间）。"
+      },
       "ConversationOut": {
         "properties": {
           "id": {
@@ -265,6 +543,35 @@
         ],
         "title": "ConversationOut",
         "description": "会话列表项。"
+      },
+      "CoverageAreaOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "area": {
+            "type": "string",
+            "title": "Area"
+          },
+          "network_type": {
+            "type": "string",
+            "title": "Network Type"
+          },
+          "level": {
+            "type": "string",
+            "title": "Level"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "area",
+          "network_type",
+          "level"
+        ],
+        "title": "CoverageAreaOut",
+        "description": "网络覆盖项（4G/5G 覆盖等级）。"
       },
       "CustomerPublic": {
         "properties": {
@@ -308,6 +615,35 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "KnowledgeDocumentOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "category",
+          "title",
+          "content"
+        ],
+        "title": "KnowledgeDocumentOut",
+        "description": "RAG 检索结果（知识库原文，不编造）。"
       },
       "LoginRequest": {
         "properties": {
@@ -363,6 +699,66 @@
         ],
         "title": "MessageOut",
         "description": "消息历史项。source 四类分类由循环3 约束，此处仅透传。"
+      },
+      "PlanOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "price": {
+            "type": "number",
+            "title": "Price"
+          },
+          "data_allowance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Allowance"
+          },
+          "call_minutes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Call Minutes"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "price",
+          "data_allowance",
+          "call_minutes",
+          "description"
+        ],
+        "title": "PlanOut",
+        "description": "套餐目录项（结构化数据 / 资费表）。"
       },
       "ReauthRequest": {
         "properties": {
