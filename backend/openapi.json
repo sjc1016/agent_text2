@@ -504,6 +504,337 @@
         }
       }
     },
+    "/transactions/plan-change": {
+      "post": {
+        "tags": [
+          "transactions"
+        ],
+        "summary": "Plan Change",
+        "description": "发起套餐变更（US-8）：二次确认（套餐对比/生效时间/合约影响/费用变化）。",
+        "operationId": "plan_change_transactions_plan_change_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionInitiateOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/transactions/vadd-change": {
+      "post": {
+        "tags": [
+          "transactions"
+        ],
+        "summary": "Vadd Change",
+        "description": "发起增值业务订退（US-9）。",
+        "operationId": "vadd_change_transactions_vadd_change_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VaddChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionInitiateOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/transactions/suspend-hold": {
+      "post": {
+        "tags": [
+          "transactions"
+        ],
+        "summary": "Suspend Hold",
+        "description": "发起停机保号（US-10）。",
+        "operationId": "suspend_hold_transactions_suspend_hold_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuspendHoldRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionInitiateOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/transactions/recharge": {
+      "post": {
+        "tags": [
+          "transactions"
+        ],
+        "summary": "Recharge",
+        "description": "发起充值缴费（US-11）。",
+        "operationId": "recharge_transactions_recharge_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RechargeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionInitiateOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/transactions/confirm": {
+      "post": {
+        "tags": [
+          "transactions"
+        ],
+        "summary": "Confirm",
+        "description": "二次确认 → 创建办理类 Ticket(Pending) 入队，会话回退 Authenticated（US-8）。\n\n未确认不入队（CONTEXT › 办理入队）；一律经 Ticket，不直接生效。",
+        "operationId": "confirm_transactions_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransactionConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/transactions/{ticket_id}/reauth": {
+      "post": {
+        "tags": [
+          "transactions"
+        ],
+        "summary": "Request Reauth",
+        "description": "触发办理执行前服务密码复核（US-12）。\n\n调度任务 seam 的 REST 暴露（PRD 测试决策 › 调度任务 seam：Ticket 待执行 →\n执行中触发服务密码复核）：校验通过后推送 reauth.required（WS），提示用户再次\n输入服务密码；随后经 /auth/reauth 复核取得 execute_token，凭之调用 execute 端点。",
+        "operationId": "request_reauth_transactions__ticket_id__reauth_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "ticket_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Ticket Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/transactions/{ticket_id}/execute": {
+      "post": {
+        "tags": [
+          "transactions"
+        ],
+        "summary": "Execute",
+        "description": "执行办理（US-12）：execute_token 复核通过后 Processing → 执行 → Effective。\n\naccess token 调本端点 → 401（未复核不得执行，CONTEXT › 办理执行复核）；\n执行成功后推送 ticket.update + notification.push（生效通知）。",
+        "operationId": "execute_transactions__ticket_id__execute_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "ticket_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Ticket Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/general-info/search": {
       "get": {
         "tags": [
@@ -1014,6 +1345,51 @@
         "title": "BusinessHallOut",
         "description": "营业厅项（名称/行政区/地址/营业时间）。"
       },
+      "BusinessImpact": {
+        "properties": {
+          "transaction_type": {
+            "type": "string",
+            "title": "Transaction Type",
+            "description": "办理类型"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary",
+            "description": "办理摘要（一句话）"
+          },
+          "plan_comparison": {
+            "type": "string",
+            "title": "Plan Comparison",
+            "description": "套餐对比（当前 vs 目标）"
+          },
+          "effective_time": {
+            "type": "string",
+            "title": "Effective Time",
+            "description": "生效时间"
+          },
+          "contract_impact": {
+            "type": "string",
+            "title": "Contract Impact",
+            "description": "合约影响"
+          },
+          "fee_change": {
+            "type": "string",
+            "title": "Fee Change",
+            "description": "费用变化"
+          }
+        },
+        "type": "object",
+        "required": [
+          "transaction_type",
+          "summary",
+          "plan_comparison",
+          "effective_time",
+          "contract_impact",
+          "fee_change"
+        ],
+        "title": "BusinessImpact",
+        "description": "结构化业务影响（二次确认 Modal 数据源，US-8~US-11）。\n\n四要素（CONTEXT › 二次确认）：套餐对比 / 生效时间 / 合约影响 / 费用变化。\n前端 second.confirm 事件据此渲染确认界面；LLM 亦可读取 summary 生成话术。"
+      },
       "ConversationOut": {
         "properties": {
           "id": {
@@ -1360,6 +1736,27 @@
         "title": "MessageOut",
         "description": "消息历史项。source 四类分类由循环3 约束，此处仅透传。"
       },
+      "PlanChangeRequest": {
+        "properties": {
+          "conversation_id": {
+            "type": "integer",
+            "title": "Conversation Id",
+            "description": "所属会话"
+          },
+          "target_plan": {
+            "type": "string",
+            "title": "Target Plan",
+            "description": "目标套餐名（套餐目录 Plan.name）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversation_id",
+          "target_plan"
+        ],
+        "title": "PlanChangeRequest",
+        "description": "发起套餐变更（US-8）。"
+      },
       "PlanOut": {
         "properties": {
           "id": {
@@ -1513,6 +1910,43 @@
         ],
         "title": "ReauthResponse",
         "description": "办理执行复核通过后颁发的短期可执行凭证。"
+      },
+      "RechargeRequest": {
+        "properties": {
+          "conversation_id": {
+            "type": "integer",
+            "title": "Conversation Id",
+            "description": "所属会话"
+          },
+          "amount": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Amount",
+            "description": "充值金额（元，> 0）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversation_id",
+          "amount"
+        ],
+        "title": "RechargeRequest",
+        "description": "发起充值缴费（US-11）。"
+      },
+      "SuspendHoldRequest": {
+        "properties": {
+          "conversation_id": {
+            "type": "integer",
+            "title": "Conversation Id",
+            "description": "所属会话"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversation_id"
+        ],
+        "title": "SuspendHoldRequest",
+        "description": "发起停机保号（US-10）。"
       },
       "TicketCreate": {
         "properties": {
@@ -1675,6 +2109,81 @@
           "refresh_token"
         ],
         "title": "TokenResponse"
+      },
+      "TransactionConfirmRequest": {
+        "properties": {
+          "conversation_id": {
+            "type": "integer",
+            "title": "Conversation Id",
+            "description": "所属会话"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "办理内容（写入 Ticket.content）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversation_id",
+          "content"
+        ],
+        "title": "TransactionConfirmRequest",
+        "description": "二次确认请求（POST /transactions/confirm）：用户显式确认 → 创建 Ticket 入队。"
+      },
+      "TransactionInitiateOut": {
+        "properties": {
+          "conversation_id": {
+            "type": "integer",
+            "title": "Conversation Id"
+          },
+          "transaction_type": {
+            "type": "string",
+            "title": "Transaction Type"
+          },
+          "business_impact": {
+            "$ref": "#/components/schemas/BusinessImpact"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversation_id",
+          "transaction_type",
+          "business_impact"
+        ],
+        "title": "TransactionInitiateOut",
+        "description": "发起办理响应：结构化业务影响（前端以此渲染二次确认 Modal）。"
+      },
+      "VaddChangeRequest": {
+        "properties": {
+          "conversation_id": {
+            "type": "integer",
+            "title": "Conversation Id",
+            "description": "所属会话"
+          },
+          "service_name": {
+            "type": "string",
+            "title": "Service Name",
+            "description": "增值业务名"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "subscribe",
+              "cancel"
+            ],
+            "title": "Action",
+            "description": "subscribe 订购 / cancel 退订"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversation_id",
+          "service_name",
+          "action"
+        ],
+        "title": "VaddChangeRequest",
+        "description": "发起增值业务订退（US-9）。"
       },
       "ValidationError": {
         "properties": {

@@ -21,10 +21,13 @@ from typing import Any
 
 from fastapi import WebSocket
 
-from app.models import Notification, Ticket, User
+from app.models import Conversation, Notification, Ticket, User
 from app.ws.events import (
     AgentStatusPayload,
+    ConversationStatePayload,
     NotificationPushPayload,
+    ReauthRequiredPayload,
+    SecondConfirmPayload,
     TicketUpdatePayload,
     WsEventName,
 )
@@ -145,3 +148,55 @@ async def push_agent_status(agent: User, status: str) -> None:
         changed_at=datetime.now(timezone.utc),
     ).model_dump(mode="json")
     await hub.push_to_agent(agent.id, WsEventName.AGENT_STATUS, payload)
+
+
+async def push_second_confirm(conversation: Conversation, impact: Any) -> None:
+    """推送 second.confirm（办理二次确认请求，PRD line 282；US-8~US-11）。
+
+    办理发起成功后（会话已流转 in_progress）由业务路由推送；impact 为
+    BusinessImpact 模型或 dict（snake_case 字段，前端直接消费渲染二次确认 Modal）。
+    """
+    if conversation.customer_id is None:
+        return  # Visitor 会话不发起办理
+    impact_dict = impact.model_dump() if hasattr(impact, "model_dump") else dict(impact)
+    payload = SecondConfirmPayload(
+        conversation_id=conversation.id,
+        transaction_type=impact_dict.get("transaction_type", ""),
+        business_impact=impact_dict,
+        requested_at=datetime.now(timezone.utc),
+    ).model_dump(mode="json")
+    await hub.push_to_customer(conversation.customer_id, WsEventName.SECOND_CONFIRM, payload)
+
+
+async def push_reauth_required(ticket: Ticket) -> None:
+    """推送 reauth.required（办理执行前服务密码复核请求，PRD line 282；US-12）。
+
+    调度任务 seam 在 Ticket 待执行 → 执行中前调用（trigger_execution_reauth 通过后），
+    要求用户经 /auth/reauth 复核后凭 execute_token 执行。
+    """
+    if ticket.customer_id is None:
+        return
+    payload = ReauthRequiredPayload(
+        ticket_id=ticket.id,
+        conversation_id=ticket.conversation_id,
+        message="办理工单执行前需再次输入服务密码复核",
+        requested_at=datetime.now(timezone.utc),
+    ).model_dump(mode="json")
+    await hub.push_to_customer(ticket.customer_id, WsEventName.REAUTH_REQUIRED, payload)
+
+
+async def push_conversation_state(conversation: Conversation, old_state: str) -> None:
+    """推送 conversation.state（会话状态机流转通知，PRD line 286）。
+
+    REST 业务路由（办理发起/确认等）在状态流转后调用；与 ws/routes.py 的
+    _push_conversation_state 同构，供非 WS 连接上下文复用。
+    """
+    if conversation.customer_id is None:
+        return
+    payload = ConversationStatePayload(
+        conversation_id=conversation.id,
+        old_state=old_state,
+        new_state=conversation.status,
+        changed_at=datetime.now(timezone.utc),
+    ).model_dump(mode="json")
+    await hub.push_to_customer(conversation.customer_id, WsEventName.CONVERSATION_STATE, payload)
