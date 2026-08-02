@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:  # pragma: no cover - 协议参数类型注解仅 mypy 需要
     # 避免 StreamingCallbacks ↔ ToolCall/ToolResult 的前向引用循环
-    pass
+    from sqlalchemy.orm import Session
 
 
 # ---------------------------------------------------------------------------
@@ -26,13 +26,16 @@ if TYPE_CHECKING:  # pragma: no cover - 协议参数类型注解仅 mypy 需要
 # ---------------------------------------------------------------------------
 @dataclass(slots=True)
 class ToolContext:
-    """tool 调用上下文（入参容器 + 审计 hook）。"""
+    """tool 调用上下文（入参容器 + 审计 hook + 数据库会话）。"""
 
     customer_id: int | None = None  # 认证客户 ID；Visitor 场景为 None
     conversation_id: int | None = None
     params: dict = field(default_factory=dict)
     #: 审计 hook（可选）；由调用方注入，tool 内部在关键节点调用
     audit_hook: Callable[[dict], None] | None = None
+    #: 数据库会话（可选）；业务 tool（查询/办理/咨询）经此访问数据，
+    #: 由调用方（WS 路由 / 测试）注入，保持 tool 为可测纯函数
+    db: Session | None = None
 
 
 @dataclass(slots=True)

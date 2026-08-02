@@ -7,6 +7,12 @@ from app.models.audit import AuditLog
 from app.models.base import Base
 from app.models.conversation import Conversation, Message, Session
 from app.models.customers import Customer
+from app.models.general import (
+    BusinessHall,
+    CoverageArea,
+    KnowledgeDocument,
+    Plan,
+)
 from app.models.ticket import Notification, Ticket
 from app.models.users import User
 
@@ -20,4 +26,8 @@ __all__ = [
     "Message",
     "Ticket",
     "Notification",
+    "KnowledgeDocument",
+    "Plan",
+    "CoverageArea",
+    "BusinessHall",
 ]

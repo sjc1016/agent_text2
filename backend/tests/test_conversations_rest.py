@@ -112,12 +112,12 @@ async def test_get_messages_other_customer_conversation_returns_404(db_client, d
     db.add(other_customer)
     db.commit()
     # 他人会话（不属于当前客户）
-    other = Conversation(customer_id=other_customer.id, status="authenticated")
-    db.add(other)
+    other_conv = Conversation(customer_id=other_customer.id, status="authenticated")
+    db.add(other_conv)
     db.commit()
 
     response = await db_client.get(
-        f"/conversations/{other.id}/messages",
+        f"/conversations/{other_conv.id}/messages",
         headers={"Authorization": f"Bearer {token}"},
     )
 
