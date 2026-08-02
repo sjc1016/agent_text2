@@ -73,3 +73,36 @@ async def db_client(tmp_path, db):
     finally:
         app.dependency_overrides.clear()
         engine.dispose()
+
+
+@pytest.fixture
+def ws_client(tmp_path):
+    """同步 WS 测试 client（starlette TestClient）+ DB override 指向临时库。
+
+    httpx AsyncClient 不支持 WebSocket；WS 测试用 starlette 同步 TestClient，
+    走同一 ASGI 栈（含中间件与 dependency_overrides）。与 db fixture 共享 tmp_path
+    库文件，可在测试中先用 db 播种客户再用 ws_client 连接鉴权。
+
+    循环4 起的 WS 系列测试（鉴权 / 事件推送 / 状态机推送）复用本 fixture。
+    """
+    from starlette.testclient import TestClient
+
+    url = f"sqlite:///{tmp_path / 'test.db'}"
+    engine = sa_create_engine(url)
+    Base.metadata.create_all(engine)
+    test_session = sessionmaker(bind=engine, expire_on_commit=False)
+
+    def override_get_db() -> Generator[Session, None, None]:
+        session = test_session()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    client = TestClient(app)
+    try:
+        yield client
+    finally:
+        app.dependency_overrides.clear()
+        engine.dispose()
