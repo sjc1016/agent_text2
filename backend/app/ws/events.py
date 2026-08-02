@@ -11,9 +11,16 @@ F0 循环5（issue #2 / PRD 第282行）：
   - `EVENT_NAMES` 由枚举派生的 frozenset，供契约校验与运行时校验入站事件名复用。
   - 各事件 payload 的 Pydantic 模型由对应业务垂直切片在本模块内补全
     （与前端 WsEventPayloadMap 细化同步），events.py 始终是文件级 SSOT。
+  - envelope 统一为 {event, data}；payload 字段沿用 snake_case（与前端约定，
+    避免跨语言映射层）。
+
+B2 循环5（issue #7 验收3）：补全 message.new / system.message 的 payload 模型。
 """
 
+from datetime import datetime
 from enum import Enum
+
+from pydantic import BaseModel, ConfigDict
 
 
 class WsEventName(str, Enum):
@@ -34,3 +41,43 @@ class WsEventName(str, Enum):
 
 #: 全部 WS 事件名集合，由枚举派生，禁止手写以防与枚举漂移。
 EVENT_NAMES: frozenset[str] = frozenset(member.value for member in WsEventName)
+
+
+class MessageNewPayload(BaseModel):
+    """message.new 事件 payload（与 REST MessageOut 字段镜像，snake_case）。
+
+    持久化的新 Message 入对话流时推送；source ∈ user/assistant/agent/system
+    （CONTEXT › 消息 四类来源）。前端可复用 MessageOut 类型消费本 payload。
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    conversation_id: int
+    source: str
+    content: str
+    created_at: datetime
+
+
+class SystemMessagePayload(BaseModel):
+    """system.message 事件 payload（瞬时系统动作提示，不持久化为 Message）。
+
+    用于会话建立提示、无权限提示、坐席状态变更等系统动作反馈；
+    与 message.new（持久化消息）互补，不进对话历史。
+    """
+
+    content: str
+    created_at: datetime
+
+
+class ConversationStatePayload(BaseModel):
+    """conversation.state 事件 payload（会话状态机流转通知）。
+
+    PRD line 286 状态机：unauthenticated → authenticated → in_progress
+    → authenticated(回退) → handed_off → closed。每次合法流转推送本事件。
+    """
+
+    conversation_id: int
+    old_state: str
+    new_state: str
+    changed_at: datetime
