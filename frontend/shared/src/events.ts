@@ -51,11 +51,7 @@ export type WsEventName = (typeof WS_EVENT_NAMES)[number]
 
 /** 会话状态机全部合法状态名（PRD line 286）。 */
 export type ConversationState =
-  | 'unauthenticated'
-  | 'authenticated'
-  | 'in_progress'
-  | 'handed_off'
-  | 'closed'
+  'unauthenticated' | 'authenticated' | 'in_progress' | 'handed_off' | 'closed'
 
 /** message.new payload：与 REST MessageOut 字段镜像（snake_case）。 */
 export interface MessageNewPayload {
