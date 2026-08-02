@@ -6,6 +6,8 @@ packages:
 # pnpm v11：onlyBuiltDependencies / neverBuiltDependencies 等已移除，
 # 统一替换为 allowBuilds（包名 → 布尔映射）。
 # esbuild 需运行 postinstall 以拉取平台原生二进制（Vite 构建依赖）。
+# vue-demi 是 pinia 的对等依赖，postinstall 用于切换 vue 2/3 版本（v1 用 vue 3）。
 # 依据：https://pnpm.io/blog/releases/11.0#allowBuilds-replaces-the-legacy-build-dependency-settings
 allowBuilds:
   esbuild: true
+  vue-demi: true

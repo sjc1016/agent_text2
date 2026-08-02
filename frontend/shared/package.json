@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "前后端共享类型（WS 事件契约 events.ts SSOT 等）",
+  "exports": {
+    "./events": "./src/events.ts"
+  },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
