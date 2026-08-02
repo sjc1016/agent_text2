@@ -14,6 +14,7 @@ from app.inquiry.routes import router as inquiry_router
 from app.logging import configure_logging
 from app.middleware import CorrelationIdMiddleware
 from app.ticket.routes import router as ticket_router
+from app.transaction.routes import router as transaction_router
 from app.ws.routes import router as ws_router
 
 configure_logging()
@@ -24,6 +25,7 @@ app.include_router(auth_router)
 app.include_router(agents_router)
 app.include_router(conversation_router)
 app.include_router(ticket_router)
+app.include_router(transaction_router)
 app.include_router(general_router)
 app.include_router(inquiry_router)
 app.include_router(ws_router)

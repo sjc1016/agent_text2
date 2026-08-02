@@ -45,7 +45,7 @@ export type WsEventName = (typeof WS_EVENT_NAMES)[number]
  * TODO（后续切片）：
  *   - conversation 切片：细化 'llm.token'
  *   - agent 切片：细化 'handoff.start' | 'handoff.end'（'agent.status' 已由 B9 细化）
- *   - transaction 切片：细化 'second.confirm' | 'reauth.required'
+ *   - transaction 切片（B6）：'second.confirm' | 'reauth.required' 已细化（见下）
  */
 
 /** 会话状态机全部合法状态名（PRD line 286）。 */
@@ -101,6 +101,35 @@ export interface AgentStatusPayload {
   changed_at: string // ISO 字符串
 }
 
+/** 四类办理类型名（US-8~US-11，镜像后端 TransactionTypeField）。 */
+export type TransactionType = 'plan_change' | 'vadd_change' | 'suspend_hold' | 'recharge'
+
+/** 结构化业务影响（二次确认 Modal 数据源，镜像后端 BusinessImpact）。 */
+export interface BusinessImpactPayload {
+  transaction_type: string
+  summary: string
+  plan_comparison: string // 套餐对比（当前 vs 目标）
+  effective_time: string // 生效时间
+  contract_impact: string // 合约影响
+  fee_change: string // 费用变化
+}
+
+/** second.confirm payload：办理发起后请求二次确认（镜像后端 SecondConfirmPayload）。 */
+export interface SecondConfirmPayload {
+  conversation_id: number
+  transaction_type: string
+  business_impact: BusinessImpactPayload // snake_case 字段快照，前端直接消费
+  requested_at: string // ISO 字符串
+}
+
+/** reauth.required payload：办理执行前服务密码复核请求（镜像后端 ReauthRequiredPayload）。 */
+export interface ReauthRequiredPayload {
+  ticket_id: number
+  conversation_id: number
+  message: string
+  requested_at: string // ISO 字符串
+}
+
 export interface WsEventPayloadMap {
   'llm.token': Record<string, unknown>
   'message.new': MessageNewPayload
@@ -111,8 +140,8 @@ export interface WsEventPayloadMap {
   'system.message': SystemMessagePayload
   'agent.status': AgentStatusPayload
   'conversation.state': ConversationStatePayload
-  'second.confirm': Record<string, unknown>
-  'reauth.required': Record<string, unknown>
+  'second.confirm': SecondConfirmPayload
+  'reauth.required': ReauthRequiredPayload
 }
 
 /** WS 事件 envelope。`event` 标识类型，`data` 携带对应 payload。 */

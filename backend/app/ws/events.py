@@ -122,3 +122,29 @@ class AgentStatusPayload(BaseModel):
     agent_id: int
     status: str
     changed_at: datetime
+
+
+class SecondConfirmPayload(BaseModel):
+    """second.confirm 事件 payload（办理二次确认请求，PRD line 282；US-8~US-11）。
+
+    办理类 tool/REST 发起后推送，含结构化业务影响（套餐对比/生效时间/合约影响/费用变化），
+    前端据此渲染二次确认 Modal；会话同步进入 in_progress（等待二次确认）。
+    """
+
+    conversation_id: int
+    transaction_type: str
+    business_impact: dict  # BusinessImpact 字段快照（snake_case，前端直接消费）
+    requested_at: datetime
+
+
+class ReauthRequiredPayload(BaseModel):
+    """reauth.required 事件 payload（办理执行前服务密码复核请求，PRD line 282；US-12）。
+
+    办理类 Ticket 从「待执行」进入「执行中」前由调度任务推送，要求用户再次输入服务密码
+    （/auth/reauth）作为单因素认证的补偿控制；复核通过后颁发 execute_token 方可执行。
+    """
+
+    ticket_id: int
+    conversation_id: int
+    message: str
+    requested_at: datetime
