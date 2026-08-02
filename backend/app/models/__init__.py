@@ -13,6 +13,7 @@ from app.models.general import (
     KnowledgeDocument,
     Plan,
 )
+from app.models.inquiry import CustomerAccount, CustomerValueAddedService
 from app.models.ticket import Notification, Ticket
 from app.models.users import User
 
@@ -30,4 +31,6 @@ __all__ = [
     "Plan",
     "CoverageArea",
     "BusinessHall",
+    "CustomerAccount",
+    "CustomerValueAddedService",
 ]
