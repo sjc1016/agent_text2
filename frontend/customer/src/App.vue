@@ -8,11 +8,7 @@ const ui = useUiStore()
 <template>
   <RouterView />
 
-  <div
-    v-if="ui.routeLoading"
-    data-testid="route-loading-overlay"
-    class="route-loading-overlay"
-  >
+  <div v-if="ui.routeLoading" data-testid="route-loading-overlay" class="route-loading-overlay">
     <div data-testid="route-loading-spinner" class="route-loading-spinner" />
   </div>
 </template>

@@ -15,10 +15,7 @@ interface SessionHeader {
 }
 
 /** 状态机各态 → 顶栏标题/徽章映射（States 矩阵 session-state-variants）。 */
-function resolveHeader(
-  state: ConversationState,
-  maskedPhone: string,
-): SessionHeader {
+function resolveHeader(state: ConversationState, maskedPhone: string): SessionHeader {
   switch (state) {
     case 'unauthenticated':
       return { title: '在线咨询', badgeVariant: 'neutral', badgeLabel: '访客' }

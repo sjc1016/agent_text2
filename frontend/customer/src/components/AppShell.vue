@@ -36,12 +36,7 @@ const tabs: TabItem[] = [
     </header>
 
     <!-- WS 断线顶栏条：PRD 状态策略「错误」行，semantic-error-tint-bg 底 -->
-    <div
-      v-if="ui.wsBroken"
-      data-testid="ws-broken-bar"
-      data-variant="error"
-      class="ws-broken-bar"
-    >
+    <div v-if="ui.wsBroken" data-testid="ws-broken-bar" data-variant="error" class="ws-broken-bar">
       连接已断开，正在重连
     </div>
 
@@ -124,8 +119,8 @@ const tabs: TabItem[] = [
 
 /* WS 断线条：semantic-error-tint-bg（DESIGN.md §4 #FCEAEA）+ semantic-error 700 文字。 */
 .ws-broken-bar {
-  background: #FCEAEA;
-  color: #B71C1C;
+  background: #fceaea;
+  color: #b71c1c;
   font-size: 12px;
   font-weight: 500;
   line-height: 18px;

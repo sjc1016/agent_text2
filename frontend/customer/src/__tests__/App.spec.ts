@@ -59,12 +59,8 @@ describe('App — loading state（路由切换全屏 spinner + 遮罩）', () =>
     const wrapper = mount(App, { global: { plugins: [router] } })
     await flushPromises()
 
-    expect(
-      wrapper.find('[data-testid="route-loading-overlay"]').exists(),
-    ).toBe(true)
-    expect(
-      wrapper.find('[data-testid="route-loading-spinner"]').exists(),
-    ).toBe(true)
+    expect(wrapper.find('[data-testid="route-loading-overlay"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="route-loading-spinner"]').exists()).toBe(true)
   })
 
   it('路由加载结束：遮罩消失', async () => {
@@ -79,15 +75,11 @@ describe('App — loading state（路由切换全屏 spinner + 遮罩）', () =>
 
     ui.routeLoading = true
     await flushPromises()
-    expect(
-      wrapper.find('[data-testid="route-loading-overlay"]').exists(),
-    ).toBe(true)
+    expect(wrapper.find('[data-testid="route-loading-overlay"]').exists()).toBe(true)
 
     ui.routeLoading = false
     await flushPromises()
-    expect(
-      wrapper.find('[data-testid="route-loading-overlay"]').exists(),
-    ).toBe(false)
+    expect(wrapper.find('[data-testid="route-loading-overlay"]').exists()).toBe(false)
   })
 
   it('路由切换触发 loading 流程：切换中显示遮罩，切换完成消失', async () => {
@@ -129,9 +121,7 @@ describe('App — loading state（路由切换全屏 spinner + 遮罩）', () =>
     await flushPromises()
 
     expect(ui.routeLoading).toBe(true)
-    expect(
-      wrapper.find('[data-testid="route-loading-overlay"]').exists(),
-    ).toBe(true)
+    expect(wrapper.find('[data-testid="route-loading-overlay"]').exists()).toBe(true)
 
     // 解析 lazy 组件 → afterEach 置 loading=false
     resolveLazy()
@@ -139,9 +129,7 @@ describe('App — loading state（路由切换全屏 spinner + 遮罩）', () =>
     await flushPromises()
 
     expect(ui.routeLoading).toBe(false)
-    expect(
-      wrapper.find('[data-testid="route-loading-overlay"]').exists(),
-    ).toBe(false)
+    expect(wrapper.find('[data-testid="route-loading-overlay"]').exists()).toBe(false)
   })
 })
 

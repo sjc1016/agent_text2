@@ -37,10 +37,7 @@ async function mountShell(initial = '/chat') {
   const router = makeRouter()
   await router.push(initial)
   await router.isReady()
-  const wrapper = mount(
-    { template: '<router-view />' },
-    { global: { plugins: [router] } },
-  )
+  const wrapper = mount({ template: '<router-view />' }, { global: { plugins: [router] } })
   return { wrapper, router }
 }
 
