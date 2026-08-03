@@ -129,5 +129,17 @@ export const useSessionStore = defineStore('session', {
     setConversationState(state: ConversationState) {
       this.conversationState = state
     },
+
+    /**
+     * 退出登录（US-17）：清除 JWT 凭证与号码脱敏，状态回访客（unauthenticated）。
+     * 顶栏随即回「在线咨询 + 访客徽章」；对话流数据（chat store）由视图层一并 reset。
+     */
+    logout() {
+      this.accessToken = ''
+      this.refreshToken = ''
+      this.maskedPhone = ''
+      this.conversationState = 'unauthenticated'
+      localStorage.removeItem(AUTH_STORAGE_KEY)
+    },
   },
 })

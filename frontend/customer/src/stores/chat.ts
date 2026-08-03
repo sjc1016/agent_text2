@@ -164,6 +164,17 @@ export const useChatStore = defineStore('chat', {
       this.pendingReauth = null
     },
 
+    /** 退出登录时清空对话流状态（#11：避免旧会话数据残留，US-17「清除会话」）。 */
+    reset(): void {
+      this.conversationId = null
+      this.messages = []
+      this.assistantPending = false
+      this.assistantPartial = ''
+      this.pendingConfirm = null
+      this.pendingReauth = null
+      this.failedContent = null
+    },
+
     /** 消费 WS 事件（ChatWsClient onEvent 回调；仅本页相关事件）。 */
     handleWsEvent(event: WsEvent): void {
       switch (event.event) {
