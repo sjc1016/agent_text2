@@ -241,6 +241,263 @@
         ]
       }
     },
+    "/agents/conversations/{conversation_id}/messages": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "List Conversation Messages",
+        "description": "坐席读取转接会话消息历史（US-21，B12 issue #44 AC1）。\n\n仅 handed_off 转接中的会话对坐席可见（转回助理后不可读）；会话不存在\n或非 handed_off → 404（不泄露客户会话存在性）。",
+        "operationId": "list_conversation_messages_agents_conversations__conversation_id__messages_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MessageOut"
+                  },
+                  "title": "Response List Conversation Messages Agents Conversations  Conversation Id  Messages Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/conversations/{conversation_id}/tickets": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "List Conversation Tickets",
+        "description": "坐席查询会话所属工单列表（US-23，B12 issue #44 AC3）。\n\nactive-chat 右栏「当前工单」数据源；会话可见性同消息历史（仅 handed_off）。",
+        "operationId": "list_conversation_tickets_agents_conversations__conversation_id__tickets_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TicketOut"
+                  },
+                  "title": "Response List Conversation Tickets Agents Conversations  Conversation Id  Tickets Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/tickets": {
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Create Agent Ticket",
+        "description": "坐席为转接会话创建工单（US-23，B12 issue #44 AC3）。\n\ncreator_type=agent、creator_id=坐席；customer_id 关联会话所属客户（访客会话\n为 None 仅落联系方式）。仅 handed_off 转接中的会话可建单（坐席在 active-chat\n右栏「创建工单」Modal 提交）。",
+        "operationId": "create_agent_ticket_agents_tickets_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TicketCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/agents/customers/{customer_id}": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Customer Profile",
+        "description": "坐席读取客户资料 + 账户信息（US-21，B12 issue #44 AC2）。\n\nactive-chat 右栏客户标识卡 + 账户信息块数据源；号码脱敏（138****0001）。\n访客（无 Customer）或无账户记录 → 404；敏感数据访问写审计日志\n（CONTEXT › 审计日志 › 用户敏感数据）。",
+        "operationId": "customer_profile_agents_customers__customer_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentCustomerProfileOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/transactions/{ticket_id}/execute": {
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Execute Agent Transaction",
+        "description": "坐席引导服务密码复核并单步执行办理工单（US-25，B12 issue #44 AC4）。\n\nactive-chat 右栏待执行办理工单「执行」按钮触发服务密码复核 Modal，坐席引导\n用户再次输入服务密码；校验通过 → Processing → Effective，写审计并推送\nticket.update / notification.push（客户侧同收）。密码失败 → 401 状态不变。",
+        "operationId": "execute_agent_transaction_agents_transactions__ticket_id__execute_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "ticket_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Ticket Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentExecuteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TicketOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agents/callbacks": {
       "get": {
         "tags": [
@@ -1280,6 +1537,87 @@
   },
   "components": {
     "schemas": {
+      "AgentCustomerProfileOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "authenticated": {
+            "type": "boolean",
+            "title": "Authenticated"
+          },
+          "balance": {
+            "type": "number",
+            "title": "Balance"
+          },
+          "plan_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Name"
+          },
+          "contract_expiry_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contract Expiry Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "phone",
+          "name",
+          "authenticated",
+          "balance",
+          "plan_name",
+          "contract_expiry_date"
+        ],
+        "title": "AgentCustomerProfileOut",
+        "description": "坐席视角客户资料 + 账户信息（US-21，active-chat 右栏客户标识卡 + 账户信息块）。\n\n号码脱敏（138****0001，CONTEXT › 审计日志 › 用户敏感数据）；authenticated 恒为\nTrue（Customer 存在即已认证主体）；账户字段复用 inquiry 数据源 CustomerAccount\n（余额/套餐名/合约到期）。访客（无 Customer）或未建账户 → 404（不编造）。"
+      },
+      "AgentExecuteRequest": {
+        "properties": {
+          "service_password": {
+            "type": "string",
+            "title": "Service Password",
+            "description": "服务密码（坐席引导客户再次输入）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "service_password"
+        ],
+        "title": "AgentExecuteRequest",
+        "description": "坐席引导办理执行请求（US-25，B12 issue #44 AC4）。\n\n单步复核执行：坐席在 active-chat 右栏「执行」触发服务密码复核 Modal，\n引导用户再次输入服务密码（PRD › 办理执行复核，单因素认证补偿控制）。"
+      },
       "AgentLoginRequest": {
         "properties": {
           "employee_id": {

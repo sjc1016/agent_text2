@@ -6,7 +6,7 @@ PRD 依据：实现决策 › API 契约 /agents/login、/agents/status、/agent
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -57,3 +57,30 @@ class CallbackItemOut(BaseModel):
     content: str  # 含 [回呼请求] 前缀（B8 离线兜底内容模板）
     skill_group: str | None  # 派单技能组（套餐业务组/故障报修组/投诉处理组）
     created_at: datetime
+
+
+class AgentExecuteRequest(BaseModel):
+    """坐席引导办理执行请求（US-25，B12 issue #44 AC4）。
+
+    单步复核执行：坐席在 active-chat 右栏「执行」触发服务密码复核 Modal，
+    引导用户再次输入服务密码（PRD › 办理执行复核，单因素认证补偿控制）。
+    """
+
+    service_password: str = Field(..., description="服务密码（坐席引导客户再次输入）")
+
+
+class AgentCustomerProfileOut(BaseModel):
+    """坐席视角客户资料 + 账户信息（US-21，active-chat 右栏客户标识卡 + 账户信息块）。
+
+    号码脱敏（138****0001，CONTEXT › 审计日志 › 用户敏感数据）；authenticated 恒为
+    True（Customer 存在即已认证主体）；账户字段复用 inquiry 数据源 CustomerAccount
+    （余额/套餐名/合约到期）。访客（无 Customer）或未建账户 → 404（不编造）。
+    """
+
+    id: int
+    phone: str  # 脱敏（138****0001）
+    name: str | None
+    authenticated: bool
+    balance: float
+    plan_name: str | None
+    contract_expiry_date: date | None

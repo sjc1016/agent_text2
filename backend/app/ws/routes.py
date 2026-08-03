@@ -528,7 +528,15 @@ async def _handle_client_message(
         await _push_system_message(websocket, "无权操作该会话")
         return
     if conv.status == "handed_off":
-        # 已在转接中：不进入 LLM 对话流（前端输入已禁用；防御性兜底）
+        # 已在转接中：不进入 LLM 对话流（B12，issue #44 AC5，US-22）。
+        # 客户消息持久化 user 消息 → 推 message.new 给客户连接（即时回显）+
+        # 经 hub.push_to_agent 推给接入坐席（conv.agent_id），坐席实时可见。
+        message = create_message(db, conv.id, "user", content)
+        db.commit()
+        await _push_message_new(websocket, message)
+        if conv.agent_id is not None:
+            payload = MessageNewPayload.model_validate(message).model_dump(mode="json")
+            await hub.push_to_agent(conv.agent_id, WsEventName.MESSAGE_NEW, payload)
         return
 
     # 1. 先载入既有历史（幂等），chat() 会追加本轮 user 消息——避免重复入库
