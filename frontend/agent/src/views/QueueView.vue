@@ -9,13 +9,15 @@
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { useAuthStore } from '../stores/auth'
 import { useQueueStore } from '../stores/queue'
 
 const router = useRouter()
 const queue = useQueueStore()
+const auth = useAuthStore()
 
-/** TODO(#18 合并后)：由 login auth store 提供坐席 access token；当前坐席认证未合并。 */
-const ACCESS_TOKEN = ''
+/** 坐席 JWT（#18 login 合并后由 auth store 提供；未登录为空串 → 401，待 #21 路由守卫统一处理）。 */
+const ACCESS_TOKEN = auth.accessToken
 
 onMounted(() => {
   queue.load(ACCESS_TOKEN)
