@@ -216,7 +216,7 @@
           "agents"
         ],
         "summary": "List Pending Queues",
-        "description": "待接入 Handoff 会话列表（US-20）。\n\n仅返回 handed_off 且未被接入的会话；号码脱敏（138****0001）。",
+        "description": "待接入 Handoff 会话列表（US-20）。\n\n仅返回 handed_off 且未被接入的会话；号码脱敏（138****0001）；\n每项含转接原因（Conversation.handoff_reason，PRD queue 页转接原因 Caption）。",
         "operationId": "list_pending_queues_agents_queues_get",
         "responses": {
           "200": {
@@ -229,6 +229,37 @@
                   },
                   "type": "array",
                   "title": "Response List Pending Queues Agents Queues Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/agents/callbacks": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "List Callbacks",
+        "description": "回呼请求工单列表（US-29，PRD queue 页回呼分组）。\n\n返回 B8 离线兜底创建的回呼请求工单（工单类 + [回呼请求] 前缀 + dispatched），\n供坐席在服务时间联系用户（「拨打」按钮数据源）；号码脱敏（138****0001）。",
+        "operationId": "list_callbacks_agents_callbacks_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CallbackItemOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Callbacks Agents Callbacks Get"
                 }
               }
             }
@@ -1415,6 +1446,72 @@
         "title": "BusinessImpact",
         "description": "结构化业务影响（二次确认 Modal 数据源，US-8~US-11）。\n\n四要素（CONTEXT › 二次确认）：套餐对比 / 生效时间 / 合约影响 / 费用变化。\n前端 second.confirm 事件据此渲染确认界面；LLM 亦可读取 summary 生成话术。"
       },
+      "CallbackItemOut": {
+        "properties": {
+          "ticket_id": {
+            "type": "integer",
+            "title": "Ticket Id"
+          },
+          "conversation_id": {
+            "type": "integer",
+            "title": "Conversation Id"
+          },
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Id"
+          },
+          "customer_phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Phone"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "skill_group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Group"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ticket_id",
+          "conversation_id",
+          "customer_id",
+          "customer_phone",
+          "content",
+          "skill_group",
+          "created_at"
+        ],
+        "title": "CallbackItemOut",
+        "description": "回呼请求工单项：离线兜底创建的 [回呼请求] Ticket（US-29，PRD queue 页回呼分组）。"
+      },
       "ConversationOut": {
         "properties": {
           "id": {
@@ -1889,6 +1986,17 @@
               }
             ],
             "title": "Last User Message"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
           }
         },
         "type": "object",
@@ -1898,7 +2006,8 @@
           "created_at",
           "customer_id",
           "customer_phone",
-          "last_user_message"
+          "last_user_message",
+          "reason"
         ],
         "title": "QueueItemOut",
         "description": "待接入队列项：一条 Handed-off 待接入会话（US-20）。"

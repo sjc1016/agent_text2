@@ -124,6 +124,38 @@ async def test_queues_excludes_non_handed_off_conversations(db_client, db):
     assert response.json() == []
 
 
+async def test_queues_includes_handoff_reason(db_client, db):
+    """B11：队列项含转接原因（来自会话 handoff_reason，PRD queue 页转接原因 Caption）。"""
+    agent = _create_agent(db)
+    customer = _create_customer(db)
+    conv = _create_conversation(db, customer.id)
+    conv.handoff_reason = "explicit_request"
+    db.commit()
+
+    response = await db_client.get(
+        "/agents/queues", headers={"Authorization": f"Bearer {_agent_token(agent)}"}
+    )
+
+    assert response.status_code == 200
+    items = response.json()
+    assert len(items) == 1
+    assert items[0]["reason"] == "explicit_request"
+
+
+async def test_queues_reason_null_when_no_handoff_reason(db_client, db):
+    """B11：未持久化转接原因的会话，队列项 reason 为 null。"""
+    agent = _create_agent(db)
+    customer = _create_customer(db)
+    _create_conversation(db, customer.id)
+
+    response = await db_client.get(
+        "/agents/queues", headers={"Authorization": f"Bearer {_agent_token(agent)}"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()[0]["reason"] is None
+
+
 async def test_queues_requires_agent_auth(db_client, db):
     """无 token → 401。"""
     response = await db_client.get("/agents/queues")

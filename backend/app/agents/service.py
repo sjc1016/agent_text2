@@ -15,8 +15,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.security import verify_password
-from app.models import Conversation, Customer, Message, User
+from app.models import Conversation, Customer, Message, Ticket, User
 from app.models.conversation import MessageSource
+from app.models.ticket import TicketStatus, TicketType
 
 #: 坐席状态三态（US-30；schema 侧用 Literal 镜像，运行时 WS 校验复用本集合）。
 AGENT_STATUSES: frozenset[str] = frozenset({"online", "offline", "break"})
@@ -89,4 +90,46 @@ def list_pending_queue_entries(db: Session) -> list[QueueEntry]:
                 last_user_message=last_msg.content if last_msg is not None else None,
             )
         )
+    return entries
+
+
+@dataclass
+class CallbackTicketEntry:
+    """回呼请求工单项（ticket + 展示增强字段）。"""
+
+    ticket: Ticket
+    customer_phone: str | None
+
+
+def list_callback_tickets(db: Session) -> list[CallbackTicketEntry]:
+    """返回回呼请求工单列表（US-29），按创建时间升序。
+
+    回呼请求工单 = B8 离线兜底产物（CONTEXT › 离线兜底）：工单类 + 内容前缀
+    [回呼请求] + 创建即派单（dispatched）+ skill_group。PRD queue 页要求
+    底部独立「回呼请求」分组（拨打按钮），本端点提供该分组数据源。
+    """
+    from app.handoff.service import CALLBACK_TICKET_CONTENT_PREFIX
+
+    tickets = (
+        db.execute(
+            select(Ticket)
+            .where(
+                Ticket.ticket_type == TicketType.TICKETING,
+                Ticket.status == TicketStatus.DISPATCHED,
+                Ticket.content.like(f"{CALLBACK_TICKET_CONTENT_PREFIX}%"),
+            )
+            .order_by(Ticket.created_at)
+        )
+        .scalars()
+        .all()
+    )
+
+    entries: list[CallbackTicketEntry] = []
+    for ticket in tickets:
+        customer_phone = None
+        if ticket.customer_id is not None:
+            customer = db.get(Customer, ticket.customer_id)
+            if customer is not None:
+                customer_phone = mask_phone(customer.phone)
+        entries.append(CallbackTicketEntry(ticket=ticket, customer_phone=customer_phone))
     return entries

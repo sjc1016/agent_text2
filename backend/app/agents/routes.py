@@ -19,9 +19,14 @@ from app.agents.schemas import (
     AgentLoginRequest,
     AgentPublic,
     AgentStatusUpdate,
+    CallbackItemOut,
     QueueItemOut,
 )
-from app.agents.service import authenticate_agent, list_pending_queue_entries
+from app.agents.service import (
+    authenticate_agent,
+    list_callback_tickets,
+    list_pending_queue_entries,
+)
 from app.auth.audit import write_audit_log
 from app.auth.dependencies import CurrentAgent
 from app.auth.schemas import TokenResponse
@@ -90,7 +95,8 @@ async def update_agent_status(
 def list_pending_queues(db: DbSession, current: CurrentAgent) -> list[QueueItemOut]:
     """待接入 Handoff 会话列表（US-20）。
 
-    仅返回 handed_off 且未被接入的会话；号码脱敏（138****0001）。
+    仅返回 handed_off 且未被接入的会话；号码脱敏（138****0001）；
+    每项含转接原因（Conversation.handoff_reason，PRD queue 页转接原因 Caption）。
     """
     return [
         QueueItemOut(
@@ -100,6 +106,28 @@ def list_pending_queues(db: DbSession, current: CurrentAgent) -> list[QueueItemO
             customer_id=entry.conversation.customer_id,
             customer_phone=entry.customer_phone,
             last_user_message=entry.last_user_message,
+            reason=entry.conversation.handoff_reason,
         )
         for entry in list_pending_queue_entries(db)
+    ]
+
+
+@router.get("/callbacks", response_model=list[CallbackItemOut])
+def list_callbacks(db: DbSession, current: CurrentAgent) -> list[CallbackItemOut]:
+    """回呼请求工单列表（US-29，PRD queue 页回呼分组）。
+
+    返回 B8 离线兜底创建的回呼请求工单（工单类 + [回呼请求] 前缀 + dispatched），
+    供坐席在服务时间联系用户（「拨打」按钮数据源）；号码脱敏（138****0001）。
+    """
+    return [
+        CallbackItemOut(
+            ticket_id=entry.ticket.id,
+            conversation_id=entry.ticket.conversation_id,
+            customer_id=entry.ticket.customer_id,
+            customer_phone=entry.customer_phone,
+            content=entry.ticket.content,
+            skill_group=entry.ticket.skill_group,
+            created_at=entry.ticket.created_at,
+        )
+        for entry in list_callback_tickets(db)
     ]
