@@ -5,6 +5,7 @@ description = "电信客服 Agent v1 后端（FastAPI + LangChain 模块化单�
 requires-python = ">=3.9"
 dependencies = [
     "alembic>=1.16.5",
+    "apscheduler>=3.10,<4",
     "bcrypt>=5.0.0",
     "fastapi>=0.128.8",
     "langchain>=0.2.0",
