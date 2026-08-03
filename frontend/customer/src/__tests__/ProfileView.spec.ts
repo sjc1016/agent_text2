@@ -58,9 +58,22 @@ function setAuthenticated() {
   useSessionStore().setAuthenticated({ accessToken: 'at', refreshToken: 'rt' }, '13800001234')
 }
 
-/** 按 URL 路由 fetch mock：/api/conversations 列表 + /api/conversations/{id}/messages 历史。 */
+/** 按 URL 路由 fetch mock：/api/customers/me 账户资料 + /api/conversations 列表 + 消息历史。 */
 function mockConversationData(conversations: ConversationFixture[]) {
   fetchMock.mockImplementation((url: string) => {
+    if (url === '/api/customers/me') {
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          id: 9,
+          phone: '13800001234',
+          name: '张三',
+          balance: 128.5,
+          plan_name: '畅享套餐',
+          contract_expiry_date: '2027-12-31',
+        }),
+      })
+    }
     if (url === '/api/conversations') {
       return Promise.resolve({
         ok: true,
@@ -301,5 +314,35 @@ describe('ProfileView — history-readonly（验收标准：点击会话历史�
     await flushPromises()
 
     expect(router.currentRoute.value.path).toBe('/profile/history/7')
+  })
+})
+
+describe('ProfileView — plan-from-api（B13 AC3：套餐简述来自 /customers/me 真实数据源）', () => {
+  it('账号卡片套餐简述展示 GET /api/customers/me 返回的 plan_name（替代 MOCK_PLAN_SUMMARY）', async () => {
+    const wrapper = await mountProfile(() => {
+      setAuthenticated()
+      fetchMock.mockImplementation((url: string) => {
+        if (url === '/api/customers/me') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              id: 9,
+              phone: '13800001234',
+              name: '张三',
+              balance: 128.5,
+              plan_name: '尊享套餐',
+              contract_expiry_date: '2027-12-31',
+            }),
+          })
+        }
+        if (url === '/api/conversations') {
+          return Promise.resolve({ ok: true, json: async () => [] })
+        }
+        return Promise.resolve({ ok: false, json: async () => ({ detail: 'not found' }) })
+      })
+    })
+
+    const card = wrapper.find('[data-testid="account-card"]')
+    expect(card.text()).toContain('尊享套餐')
   })
 })
