@@ -35,6 +35,20 @@ class Settings(BaseSettings):
     # bcrypt（ADR 0004：成本 12）
     bcrypt_cost: int = 12
 
+    # LLM（OpenAI 兼容 API 真实接入；llm_api_key 为空时回退 FakeListLLM 占位）
+    # 主 provider 失败（如 529 过载）时自动切换到 failover provider（FailoverLLM）
+    llm_base_url: str = "https://integrate.api.nvidia.com/v1"
+    llm_api_key: str = ""  # 生产经 .env 注入（APP_LLM_API_KEY），不入仓库
+    llm_model: str = "deepseek-ai/deepseek-v4-flash"
+    llm_temperature: float = 0.7
+    llm_timeout_seconds: float = 60.0
+
+    # 备 provider（自动切换）：base_url 可含 /v1 前缀或完整 /chat/completions 路径
+    llm_failover_base_url: str = "https://apihub.agnes-ai.com/v1/chat/completions"
+    llm_failover_api_key: str = ""  # APP_LLM_FAILOVER_API_KEY
+    llm_failover_model: str = "agnes-2.0-flash"
+    llm_failover_timeout_seconds: float = 60.0
+
 
 @lru_cache
 def get_settings() -> Settings:

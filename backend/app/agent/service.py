@@ -18,6 +18,7 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+import structlog
 from sqlalchemy.orm import Session
 
 from .llm import BaseLLM, ChatMessage, ChatRole
@@ -32,6 +33,8 @@ from .tools import (
 
 if TYPE_CHECKING:  # pragma: no cover
     pass
+
+logger = structlog.get_logger(__name__)
 
 
 async def _safe_cb(
@@ -114,8 +117,23 @@ class AssistantService:
         max_cycles = 5
         for _ in range(max_cycles):
             raw_tokens: list[str] = []
-            for token in self.llm.stream(history):
-                raw_tokens.append(token)
+            try:
+                for token in self.llm.stream(history):
+                    raw_tokens.append(token)
+            except Exception as exc:  # noqa: BLE001 - LLM provider 错误（过载/超时）兜底
+                # 真实 LLM（如 NVIDIA 529 过载）瞬时失败时降级为提示话术，
+                # 保证 chat() 契约「必然产出回复」，不中断 WS 连接。
+                logger.warning(
+                    "llm_stream_failed",
+                    conversation_id=conversation_id,
+                    error=str(exc),
+                )
+                fallback = "抱歉，当前服务繁忙，请稍后重试。"
+                for ch in fallback:
+                    await _safe_cb(callbacks, "on_token", ch)
+                    yield ch
+                history.append(ChatMessage(role=ChatRole.ASSISTANT, content=fallback))
+                return
             llm_output = "".join(raw_tokens)
 
             call: ToolCall | None = parse_tool_call(llm_output)
