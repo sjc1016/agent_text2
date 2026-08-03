@@ -6,21 +6,23 @@ import { createPinia, setActivePinia, type Pinia } from 'pinia'
 
 import QueueView from '../views/QueueView.vue'
 import { useQueueStore } from '../stores/queue'
-import { listQueueItems, type QueueItem } from '../api/agents'
+import { listCallbacks, listQueueItems, type QueueItem } from '../api/agents'
 
 /**
  * #20 UI-A-3 循环：QueueView（States 矩阵逐行验证）。
  *
  * 行序循环：default → new-item-highlight → empty → loading → all-busy。
  * 测行为不测像素：data-testid 结构 + 可观察行为（接入跳转 / 拨打 / 刷新）。
- * 数据缺口：转接原因 + 回呼请求分组由本地 mock 驱动（backend issue #42）。
+ * 回呼请求分组数据源为 GET /agents/callbacks（B11 issue #42，测试 mock api）。
  */
 
 vi.mock('../api/agents', () => ({
   listQueueItems: vi.fn(),
+  listCallbacks: vi.fn(),
 }))
 
 const mockedListQueueItems = vi.mocked(listQueueItems)
+const mockedListCallbacks = vi.mocked(listCallbacks)
 
 let router: Router
 
@@ -56,6 +58,7 @@ function queueItem(id: number, overrides: Partial<QueueItem> = {}): QueueItem {
     customer_id: id * 10,
     customer_phone: '138****0001',
     last_user_message: '用户请求转人工',
+    reason: 'explicit_request',
     ...overrides,
   }
 }
@@ -63,6 +66,19 @@ function queueItem(id: number, overrides: Partial<QueueItem> = {}): QueueItem {
 beforeEach(() => {
   localStorage.clear()
   mockedListQueueItems.mockReset()
+  mockedListCallbacks.mockReset()
+  // 默认返回一条回呼请求（回呼分组渲染依赖；各用例不专门断言时无副作用）
+  mockedListCallbacks.mockResolvedValue([
+    {
+      ticket_id: 101,
+      conversation_id: 1,
+      customer_id: 10,
+      customer_phone: '139****0002',
+      content: '[回呼请求] 非服务时间咨询',
+      skill_group: '套餐业务组',
+      created_at: '2026-08-03T02:00:00Z',
+    },
+  ])
 })
 
 afterEach(() => {
@@ -89,6 +105,8 @@ describe('QueueView — default state（US-20/21/29）', () => {
     expect(items).toHaveLength(2)
     expect(items[0].text()).toContain('用户请求转人工')
     expect(items[1].text()).toContain('故障报修')
+    // 每行辅助文案：转接原因（PRD queue 列表段 Caption）+ 等待时长
+    expect(items[0].text()).toContain('用户明确要求转人工')
     expect(items[0].find('[data-testid="queue-accept-btn"]').exists()).toBe(true)
 
     // 回呼请求分组：标题 + 拨打按钮

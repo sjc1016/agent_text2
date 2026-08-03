@@ -47,14 +47,14 @@ const auditLogs = computed(() => {
   return [...logs].sort((a, b) => b.created_at.localeCompare(a.created_at))
 })
 
-/** 派单技能组 Select 选中值（默认取工单当前技能组或首项）。 */
-const dispatchGroup = ref('plan')
+/** 派单技能组 Select 选中值（默认取工单当前技能组或首项；后端值为中文技能组）。 */
+const dispatchGroup = ref('套餐业务组')
 
 async function loadDetail() {
   loading.value = true
   try {
     detail.value = await getAgentTicketDetail(Number(route.params.id), auth.accessToken)
-    dispatchGroup.value = detail.value.skill_group ?? 'plan'
+    dispatchGroup.value = detail.value.skill_group ?? '套餐业务组'
   } finally {
     loading.value = false
   }

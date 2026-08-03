@@ -1,17 +1,17 @@
 /**
  * agent-console active-chat 页 REST 客户端（坐席视角）。
  *
- * 后端契约核查（backend/app/agents/routes.py + schemas.py + conversation/ticket/routes.py）：
- *   坐席端点目前仅 /agents/login、/agents/status、/agents/queues 三个；
- *   会话消息历史（/conversations/{id}/messages 仅 CurrentCustomer → 坐席 401）、
- *   客户资料+账户信息（/customers/me 仅客户视角）、当前工单+创建工单（/tickets 仅客户）、
- *   执行复核（/auth/reauth + /transactions/{id}/execute 仅客户）全部缺失。
- *
- * TODO(backend #45, B12)：坐席视角 active-chat 数据契约缺口。v1 以本地 mock 数据源
- * 驱动 UI（模式同 queue store 的 MOCK_CALLBACK_TICKETS），#45 落地后各函数
- * 替换为真实 fetch（接口与类型不变），本段 mock 数据源随之删除。
+ * 契约（backend/app/agents/routes.py + schemas.py，B12 issue #44 / B14 issue #55）：
+ *   GET  /api/agents/conversations/{id}               → ConversationViewOut（B14 AC4）
+ *   GET  /api/agents/conversations/{id}/messages      → list[MessageOut]（B12 AC1）
+ *   GET  /api/agents/conversations/{id}/tickets       → list[TicketOut]（B12 AC3）
+ *   GET  /api/agents/customers/{customer_id}          → AgentCustomerProfileOut（B12 AC2）
+ *   POST /api/agents/tickets                          → 201 TicketOut（B12 AC3）
+ *   POST /api/agents/transactions/{ticket_id}/execute → TicketOut（B12 AC4）
  *
  * 基址 `/api`：ADR 0006 / deploy/nginx.conf 反代契约（同 agents.ts）。
+ * 边界（B14）：assistant_attempts（助理已尝试操作摘要）后端未提供（需 ticket_id 关联的
+ * 审计扩展，另行 issue），前端置空数组，转接上下文卡仅渲染转接原因；详情页 audit_logs 同理。
  */
 
 import type { MessageNewPayload } from 'shared/events'
@@ -28,14 +28,14 @@ export interface DraftChatMessage {
   created_at: string
 }
 
-/** 进行中会话视图（坐席视角会话头，镜像后端 #45 预期契约）。 */
+/** 进行中会话视图（坐席视角会话头，镜像后端 ConversationViewOut）。 */
 export interface AgentConversationView {
   conversation_id: number
   status: string
   customer_id: number | null
   customer_phone: string | null
   handoff_reason: string | null
-  /** 助理已尝试操作摘要（转接上下文，PRD §active-chat 右栏）。 */
+  /** 助理已尝试操作摘要（转接上下文，PRD §active-chat 右栏）；B14 边界：后端未提供，置空。 */
   assistant_attempts: string[]
 }
 
@@ -104,132 +104,156 @@ export function ticketStatusLabel(ticket: AgentTicket): string {
   return map[ticket.status] ?? ticket.status
 }
 
-/* ============ mock 数据源（TODO backend #45：落地后删除并改真实 fetch） ============ */
+/* ============ 真实 fetch（B12 #44 / B14 #55 已落地） ============ */
 
-let _mockNextTicketId = 101
-
-const MOCK_MESSAGES: AgentChatMessage[] = [
-  {
-    id: 1,
-    conversation_id: 7,
-    source: 'assistant',
-    content: '您好，我是电信客服助理，请问有什么可以帮您？',
-    created_at: '2026-08-03T01:00:00Z',
-  },
-  {
-    id: 2,
-    conversation_id: 7,
-    source: 'user',
-    content: '我想把现在的 5G 畅享套餐换成更便宜的档位',
-    created_at: '2026-08-03T01:01:00Z',
-  },
-  {
-    id: 3,
-    conversation_id: 7,
-    source: 'agent',
-    content: '好的，我来帮您核实当前套餐与可选的变更方案',
-    created_at: '2026-08-03T01:05:00Z',
-  },
-  {
-    id: 4,
-    conversation_id: 7,
-    source: 'system',
-    content: '人工客服已接入，为您服务',
-    created_at: '2026-08-03T01:05:30Z',
-  },
-]
-
-const MOCK_PROFILE: AgentCustomerProfile = {
-  customer_id: 70,
-  phone: '138****0001',
-  name: '张**',
-  authenticated: true,
-  contact_name: null,
-  contact_phone: null,
-  account_balance: '58.60 元',
-  plan_name: '5G 畅享套餐 129 元档',
-  contract_expiry: '2027-06-30',
+/** Bearer 请求头（坐席 JWT，来自 auth store `agent.auth`）。 */
+function authHeaders(token: string): Record<string, string> {
+  return { Authorization: `Bearer ${token}` }
 }
 
-const MOCK_TICKETS: AgentTicket[] = [
-  { id: 11, ticket_type: 'transaction', status: 'pending', content: '办理 10G 流量加装包' },
-]
-
-/**
- * 拉取进行中会话消息历史（按 created_at 升序；mock 固定返回演示对话）。
- * #45 落地后：GET /api/agents/conversations/{id}/messages（坐席 Bearer）。
- */
-export async function listAgentMessages(
-  conversationId: number,
-  _token: string,
-): Promise<AgentChatMessage[]> {
-  void conversationId
-  return MOCK_MESSAGES
+/** 非 2xx 响应收敛为 Error（detail 文案优先）。 */
+async function expectOk(response: Response): Promise<Response> {
+  if (!response.ok) {
+    let detail = '请求失败'
+    try {
+      const body = (await response.json()) as { detail?: unknown }
+      if (typeof body.detail === 'string') detail = body.detail
+    } catch {
+      // 非 JSON 错误体：沿用默认文案
+    }
+    throw new Error(detail)
+  }
+  return response
 }
 
 /**
  * 拉取进行中会话视图；不存在返回 null（驱动空状态「暂无进行中会话」）。
- * #45 落地后：GET /api/agents/conversations/{id}（坐席 Bearer）。
+ * GET /api/agents/conversations/{id}（B14 AC4；仅 handed_off 可见，否则 404 → null）。
  */
 export async function fetchAgentConversation(
   conversationId: number,
-  _token: string,
+  token: string,
 ): Promise<AgentConversationView | null> {
-  if (!conversationId) return null
+  const response = await fetch(`/api/agents/conversations/${conversationId}`, {
+    headers: authHeaders(token),
+  })
+  if (response.status === 404) return null
+  const body = (await expectOk(response).then((r) => r.json())) as {
+    conversation_id: number
+    status: string
+    customer_id: number | null
+    customer_phone: string | null
+    handoff_reason: string | null
+  }
   return {
-    conversation_id: conversationId,
-    status: 'handed_off',
-    customer_id: 70,
-    customer_phone: '138****0001',
-    handoff_reason: 'explicit_request',
-    assistant_attempts: ['已尝试查询套餐变更方案', '已尝试比对两档套餐差异'],
+    conversation_id: body.conversation_id,
+    status: body.status,
+    customer_id: body.customer_id,
+    customer_phone: body.customer_phone,
+    handoff_reason: body.handoff_reason,
+    assistant_attempts: [], // B14 边界：后端未提供（另行 issue），转接上下文仅渲染转接原因
   }
 }
 
-/** 拉取客户资料（右栏标识卡 + 账户信息；加载变体骨架屏数据源）。 */
-export async function fetchAgentCustomerProfile(
-  _conversationId: number,
-  _token: string,
-): Promise<AgentCustomerProfile> {
-  return MOCK_PROFILE
+/** 拉取进行中会话消息历史（按 created_at 升序）。GET /api/agents/conversations/{id}/messages（B12 AC1）。 */
+export async function listAgentMessages(
+  conversationId: number,
+  token: string,
+): Promise<AgentChatMessage[]> {
+  const response = await expectOk(
+    await fetch(`/api/agents/conversations/${conversationId}/messages`, {
+      headers: authHeaders(token),
+    }),
+  )
+  return (await response.json()) as AgentChatMessage[]
 }
 
-/** 拉取当前工单列表（右栏「当前工单」嵌套卡片）。 */
+/**
+ * 拉取认证客户资料 + 账户信息（US-21 右栏标识卡 + 账户信息块）。
+ * GET /api/agents/customers/{customer_id}（B12 AC2；号码已脱敏，balance → 金额文案）。
+ * 访客（无 Customer）不调用本函数：view 侧按 customer_id 为 null 本地构造访客资料卡。
+ */
+export async function fetchAgentCustomerProfile(
+  customerId: number,
+  token: string,
+): Promise<AgentCustomerProfile> {
+  const response = await expectOk(
+    await fetch(`/api/agents/customers/${customerId}`, { headers: authHeaders(token) }),
+  )
+  const body = (await response.json()) as {
+    id: number
+    phone: string
+    name: string | null
+    authenticated: boolean
+    balance: number
+    plan_name: string | null
+    contract_expiry_date: string | null
+  }
+  return {
+    customer_id: body.id,
+    phone: body.phone,
+    name: body.name,
+    authenticated: body.authenticated,
+    contact_name: null,
+    contact_phone: null,
+    account_balance: `${body.balance.toFixed(2)} 元`,
+    plan_name: body.plan_name,
+    contract_expiry: body.contract_expiry_date,
+  }
+}
+
+/** 拉取当前工单列表（右栏「当前工单」）。GET /api/agents/conversations/{id}/tickets（B12 AC3）。 */
 export async function listAgentTickets(
-  _conversationId: number,
-  _token: string,
+  conversationId: number,
+  token: string,
 ): Promise<AgentTicket[]> {
-  return [...MOCK_TICKETS]
+  const response = await expectOk(
+    await fetch(`/api/agents/conversations/${conversationId}/tickets`, {
+      headers: authHeaders(token),
+    }),
+  )
+  return (await response.json()) as AgentTicket[]
 }
 
 /**
  * 创建工单（Modal 提交；成功返回新工单并追加到当前列表）。
- * #45 落地后：POST /api/agents/tickets（坐席 Bearer，creator_type=agent）。
+ * POST /api/agents/tickets（B12 AC3；creator_type=agent，仅 handed_off 会话可建）。
  */
 export async function createAgentTicket(
-  _conversationId: number,
+  conversationId: number,
   input: CreateTicketInput,
-  _token: string,
+  token: string,
 ): Promise<AgentTicket> {
-  const ticket: AgentTicket = {
-    id: _mockNextTicketId++,
-    ticket_type: input.ticket_type,
-    status: 'pending',
-    content: input.content,
-  }
-  MOCK_TICKETS.push(ticket)
-  return ticket
+  const response = await expectOk(
+    await fetch('/api/agents/tickets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
+      body: JSON.stringify({
+        conversation_id: conversationId,
+        ticket_type: input.ticket_type,
+        content: input.content,
+      }),
+    }),
+  )
+  return (await response.json()) as AgentTicket
 }
 
 /**
  * 服务密码复核通过后执行待执行办理工单（US-25；执行失败抛 Error 供 Modal 展示）。
- * #45 落地后：POST /api/agents/tickets/{id}/execute（复核密码校验待后端实现）。
+ * POST /api/agents/transactions/{ticket_id}/execute（B12 AC4；服务密码校验失败 → 401）。
  */
 export async function executeAgentTicket(
   _conversationId: number,
-  _ticketId: number,
-  _servicePassword: string,
-  _token: string,
+  ticketId: number,
+  servicePassword: string,
+  token: string,
 ): Promise<void> {
-  return undefined
+  const response = await expectOk(
+    await fetch(`/api/agents/transactions/${ticketId}/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
+      body: JSON.stringify({ service_password: servicePassword }),
+    }),
+  )
+  await response.json() // TicketOut（调用方不消费返回值）
 }

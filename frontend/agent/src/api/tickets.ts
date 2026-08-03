@@ -1,16 +1,21 @@
 /**
- * agent-console tickets 页 REST 客户端（坐席视角工单列表）。
+ * agent-console tickets 页 REST 客户端（坐席视角工单列表/详情）。
  *
- * 后端契约核查（backend/app/ticket/routes.py + schemas.py）：
- *   B7（#10）仅提供客户视角端点：POST/GET/PATCH /tickets（CurrentCustomer Bearer）。
- *   坐席视角工单端点缺失（backend #44/#45，B12），与 #20/#21 模式一致：
- *   v1 以本地 mock 数据源驱动 UI（接口与类型保持镜像后端 TicketOut + 坐席展示所需字段），
- *   #44/#45 落地后各函数替换为真实 fetch（GET /api/agents/tickets、PATCH 状态流转、执行复核）。
+ * 契约（backend/app/agents/routes.py + schemas.py，B12 issue #44 / B14 issue #55）：
+ *   GET  /api/agents/tickets                          → list[AgentTicketOut]（B14 AC1）
+ *   GET  /api/agents/tickets/{id}                     → AgentTicketOut（B14 AC3）
+ *   POST /api/agents/tickets/{id}/dispatch[?skill_group] → AgentTicketOut（B14 AC2）
+ *   POST /api/agents/tickets/{id}/close               → AgentTicketOut（B14 AC2）
+ *   POST /api/agents/tickets/{id}/cancel              → AgentTicketOut（B14 AC2）
+ *   POST /api/agents/transactions/{id}/execute        → AgentTicketOut（B12 AC4）
  *
  * 基址 `/api`：ADR 0006 / deploy/nginx.conf 反代契约（同 agents.ts）。
+ * 边界（B14）：时间线（状态流转）由前端按状态机推导、审计日志由前端按状态机模拟
+ * ——后端未提供按 ticket 的审计查询（需 audit_logs 关联扩展，另行 issue）；
+ * 详情页 audit_logs/timeline 因此仍为前端展示层推导，非后端契约。
  */
 
-/** 坐席视角工单（镜像 backend TicketOut + 关联客户号码脱敏 + skill_group 技能组）。 */
+/** 坐席视角工单（镜像后端 AgentTicketOut：TicketOut 字段 + 脱敏号码 + 技能组）。 */
 export interface AgentTicket {
   id: number
   conversation_id: number
@@ -18,16 +23,13 @@ export interface AgentTicket {
   status: string
   content: string
   skill_group: string | null
-  customer_phone: string | null
+  customer_id: number | null
+  customer_phone: string | null // 脱敏（138****0001）
   contact_name: string | null
   contact_phone: string | null
+  creator_type: string
+  creator_id: number | null
   created_at: string
-}
-
-/** 创建工单入参（US-23：工单类型 + 内容，PRD 建单 Modal 两字段）。 */
-export interface CreateTicketInput {
-  ticket_type: 'transaction' | 'ticketing'
-  content: string
 }
 
 /** 工单类型 → 展示文案（办理类/工单类）。 */
@@ -82,11 +84,11 @@ export function ticketBadgeVariant(
   return map[ticket.status] ?? 'neutral'
 }
 
-/** 技能组 → 展示文案（PRD 筛选栏技能组：套餐业务组/故障报修组/投诉处理组）。 */
+/** 技能组（后端存储值为中文：套餐业务组/故障报修组/投诉处理组；PRD 筛选栏同源）。 */
 export const SKILL_GROUP_LABELS: Record<string, string> = {
-  plan: '套餐业务组',
-  fault: '故障报修组',
-  complaint: '投诉处理组',
+  套餐业务组: '套餐业务组',
+  故障报修组: '故障报修组',
+  投诉处理组: '投诉处理组',
 }
 
 export function skillGroupLabel(group: string | null): string {
@@ -120,7 +122,7 @@ export interface AuditLogEntry {
   is_key: boolean
 }
 
-/** 坐席视角工单详情（镜像 backend TicketOut + 创建者展示 + 时间线 + 审计日志）。 */
+/** 坐席视角工单详情（后端 AgentTicketOut + 创建者展示 + 时间线 + 审计日志）。 */
 export interface AgentTicketDetail extends AgentTicket {
   /** 创建者展示（坐席工号 / 客户号码）。 */
   creator: string
@@ -151,182 +153,114 @@ export function ticketActionZone(t: Pick<AgentTicket, 'ticket_type' | 'status'>)
   return null
 }
 
-/* ============ mock 数据源（TODO backend #44/#45：落地后删除并改真实 fetch） ============ */
+/* ============ 真实 fetch（B12 #44 / B14 #55 已落地） ============ */
 
-/** 当前列表快照：行内操作成功后原地替换对应工单（状态更新由 mock 返回最新对象）。 */
-let _mockTickets: AgentTicket[] = [
-  {
-    id: 11,
-    conversation_id: 7,
-    ticket_type: 'ticketing',
-    status: 'pending',
-    content: '宽带故障报修',
-    skill_group: 'fault',
-    customer_phone: '138****0001',
-    contact_name: null,
-    contact_phone: null,
-    created_at: '2026-08-03T01:00:00Z',
-  },
-  {
-    id: 12,
-    conversation_id: 7,
-    ticket_type: 'transaction',
-    status: 'pending',
-    content: '办理 10G 流量加装包',
-    skill_group: 'plan',
-    customer_phone: '138****0001',
-    contact_name: null,
-    contact_phone: null,
-    created_at: '2026-08-03T01:05:00Z',
-  },
-  {
-    id: 13,
-    conversation_id: 7,
-    ticket_type: 'transaction',
-    status: 'processing',
-    content: '停机保号',
-    skill_group: 'plan',
-    customer_phone: '139****0002',
-    contact_name: null,
-    contact_phone: null,
-    created_at: '2026-08-03T01:10:00Z',
-  },
-  {
-    id: 14,
-    conversation_id: 8,
-    ticket_type: 'ticketing',
-    status: 'dispatched',
-    content: '5G 套餐升级咨询',
-    skill_group: 'plan',
-    customer_phone: '158****0013',
-    contact_name: null,
-    contact_phone: null,
-    created_at: '2026-08-03T02:00:00Z',
-  },
-  {
-    id: 15,
-    conversation_id: 8,
-    ticket_type: 'ticketing',
-    status: 'awaiting_confirmation',
-    content: '宽带移机',
-    skill_group: 'fault',
-    customer_phone: '158****0013',
-    contact_name: null,
-    contact_phone: null,
-    created_at: '2026-08-03T02:20:00Z',
-  },
-  {
-    id: 16,
-    conversation_id: 9,
-    ticket_type: 'ticketing',
-    status: 'dispatched',
-    content: '[回呼请求] 客户咨询套餐变更',
-    skill_group: 'plan',
-    customer_phone: '136****0088',
-    contact_name: null,
-    contact_phone: null,
-    created_at: '2026-08-03T02:30:00Z',
-  },
-  {
-    id: 17,
-    conversation_id: 9,
-    ticket_type: 'ticketing',
-    status: 'closed',
-    content: '宽带移机已完成',
-    skill_group: 'fault',
-    customer_phone: '158****0013',
-    contact_name: null,
-    contact_phone: null,
-    created_at: '2026-08-03T03:00:00Z',
-  },
-  {
-    id: 18,
-    conversation_id: 7,
-    ticket_type: 'transaction',
-    status: 'effective',
-    content: '办理 20G 流量加装包',
-    skill_group: 'plan',
-    customer_phone: '138****0001',
-    contact_name: null,
-    contact_phone: null,
-    created_at: '2026-08-03T03:10:00Z',
-  },
-]
+/** Bearer 请求头（坐席 JWT，来自 auth store `agent.auth`）。 */
+function authHeaders(token: string): Record<string, string> {
+  return { Authorization: `Bearer ${token}` }
+}
 
-let _mockNextTicketId = 100
+/** 非 2xx 响应收敛为 Error（detail 文案优先）。 */
+async function expectOk(response: Response): Promise<Response> {
+  if (!response.ok) {
+    let detail = '请求失败'
+    try {
+      const body = (await response.json()) as { detail?: unknown }
+      if (typeof body.detail === 'string') detail = body.detail
+    } catch {
+      // 非 JSON 错误体：沿用默认文案
+    }
+    throw new Error(detail)
+  }
+  return response
+}
 
-function replaceMock(ticket: AgentTicket): AgentTicket {
-  _mockTickets = _mockTickets.map((t) => (t.id === ticket.id ? ticket : t))
-  return ticket
+/** 拉取坐席工单列表（US-27；按创建时间倒序，号码已脱敏）。GET /api/agents/tickets（B14 AC1）。 */
+export async function listAgentTickets(token: string): Promise<AgentTicket[]> {
+  const response = await expectOk(
+    await fetch('/api/agents/tickets', { headers: authHeaders(token) }),
+  )
+  return (await response.json()) as AgentTicket[]
 }
 
 /**
- * 拉取坐席工单列表（US-27；按创建时间倒序，号码已脱敏）。
- * #44/#45 落地后：GET /api/agents/tickets（坐席 Bearer）。
+ * 派单（US-24 行内操作）：工单类 pending → dispatched（可选技能组，触发通知）。
+ * POST /api/agents/tickets/{id}/dispatch（B14 AC2）。
  */
-export async function listAgentTickets(_token: string): Promise<AgentTicket[]> {
-  return _mockTickets.slice().sort((a, b) => b.created_at.localeCompare(a.created_at))
+export async function dispatchTicket(ticketId: number, token: string): Promise<AgentTicket> {
+  const response = await expectOk(
+    await fetch(`/api/agents/tickets/${ticketId}/dispatch`, {
+      method: 'POST',
+      headers: authHeaders(token),
+    }),
+  )
+  return (await response.json()) as AgentTicket
 }
 
 /**
- * 派单（US-24）：待派单（工单类 pending）→ 已派单。
- * #44/#45 落地后：POST /api/agents/tickets/{id}/dispatch（坐席 Bearer）。
+ * 派单到技能组（US-24 详情页操作区）：待派单 → 已派单 + 记录技能组。
+ * POST /api/agents/tickets/{id}/dispatch?skill_group=…（B14 AC2）。
  */
-export async function dispatchTicket(ticketId: number, _token: string): Promise<AgentTicket> {
-  const current = _mockTickets.find((t) => t.id === ticketId)
-  if (!current) throw new Error('工单不存在')
-  return replaceMock({ ...current, status: 'dispatched' })
+export async function dispatchTicketToGroup(
+  ticketId: number,
+  skillGroup: string,
+  token: string,
+): Promise<AgentTicket> {
+  const response = await expectOk(
+    await fetch(
+      `/api/agents/tickets/${ticketId}/dispatch?skill_group=${encodeURIComponent(skillGroup)}`,
+      { method: 'POST', headers: authHeaders(token) },
+    ),
+  )
+  return (await response.json()) as AgentTicket
 }
 
 /**
- * 关闭（US-24）：待确认（awaiting_confirmation）→ 已关闭。
- * #44/#45 落地后：POST /api/agents/tickets/{id}/close（坐席 Bearer）。
+ * 关闭（US-24）：工单类 awaiting_confirmation → closed（触发通知）。
+ * POST /api/agents/tickets/{id}/close（B14 AC2）。
  */
-export async function closeTicket(ticketId: number, _token: string): Promise<AgentTicket> {
-  const current = _mockTickets.find((t) => t.id === ticketId)
-  if (!current) throw new Error('工单不存在')
-  return replaceMock({ ...current, status: 'closed' })
+export async function closeTicket(ticketId: number, token: string): Promise<AgentTicket> {
+  const response = await expectOk(
+    await fetch(`/api/agents/tickets/${ticketId}/close`, {
+      method: 'POST',
+      headers: authHeaders(token),
+    }),
+  )
+  return (await response.json()) as AgentTicket
 }
 
 /**
- * 服务密码复核通过后执行待执行办理工单（US-25；待执行 → 执行中）。
- * #44/#45 落地后：POST /api/agents/tickets/{id}/execute（复核密码校验待后端实现）。
+ * 取消工单（US-24 详情页操作区）：非终态 → cancelled（不触发通知）。
+ * POST /api/agents/tickets/{id}/cancel（B14 AC2）。
+ */
+export async function cancelTicket(ticketId: number, token: string): Promise<AgentTicket> {
+  const response = await expectOk(
+    await fetch(`/api/agents/tickets/${ticketId}/cancel`, {
+      method: 'POST',
+      headers: authHeaders(token),
+    }),
+  )
+  return (await response.json()) as AgentTicket
+}
+
+/**
+ * 服务密码复核通过后执行待执行办理工单（US-25；待执行 → 执行中；失败抛 Error 供 Modal 展示）。
+ * POST /api/agents/transactions/{ticket_id}/execute（B12 AC4；服务密码校验失败 → 401）。
  */
 export async function executeTicket(
   ticketId: number,
-  _servicePassword: string,
-  _token: string,
+  servicePassword: string,
+  token: string,
 ): Promise<AgentTicket> {
-  const current = _mockTickets.find((t) => t.id === ticketId)
-  if (!current) throw new Error('工单不存在')
-  return replaceMock({ ...current, status: 'processing' })
+  const response = await expectOk(
+    await fetch(`/api/agents/transactions/${ticketId}/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
+      body: JSON.stringify({ service_password: servicePassword }),
+    }),
+  )
+  return (await response.json()) as AgentTicket
 }
-
-/**
- * 创建工单（US-23）：坐席建单，默认 pending 入队。
- * #44/#45 落地后：POST /api/agents/tickets（坐席 Bearer，creator_type=agent）。
- */
-export async function createAgentTicket(
-  input: CreateTicketInput,
-  _token: string,
-): Promise<AgentTicket> {
-  const ticket: AgentTicket = {
-    id: _mockNextTicketId++,
-    conversation_id: 0,
-    ticket_type: input.ticket_type,
-    status: 'pending',
-    content: input.content,
-    skill_group: null,
-    customer_phone: null,
-    contact_name: null,
-    contact_phone: null,
-    created_at: new Date().toISOString(),
-  }
-  _mockTickets = [ticket, ..._mockTickets]
-  return ticket
-}
-
-/* ============ 详情 mock 数据源（#23 UI-A-6；TODO backend #44/#45：落地后改真实 fetch） ============ */
 
 /** 各类型状态机主线（不含分支终态 closed/effective；cancelled/failed 由非终态跳入）。 */
 const TICKETING_MAIN = ['pending', 'dispatched', 'in_progress', 'awaiting_confirmation']
@@ -339,6 +273,7 @@ function mainSequenceFor(t: Pick<AgentTicket, 'ticket_type'>): string[] {
 /**
  * 生成状态流转时间线（PRD §ticket-detail 时间线段）：主线序列到当前态，
  * 分支终态（cancelled/failed/closed/effective）追加于主线末；当前态 is_current 标记。
+ * B14 边界：后端未提供按工单的状态流转记录，时间线由前端按状态机推导。
  */
 function buildTimeline(t: AgentTicket): TicketTimelineNode[] {
   const main = mainSequenceFor(t)
@@ -357,6 +292,8 @@ function buildTimeline(t: AgentTicket): TicketTimelineNode[] {
 /**
  * 生成审计日志轨迹（PRD §ticket-detail 审计日志段）：按状态机产生合规留痕，
  * 服务密码认证/敏感数据访问标记为关键操作（详情页 Info 徽章）。返回正序（页面倒序展示）。
+ * B14 边界：后端未提供按工单的审计查询（audit_logs 无 ticket_id 关联，另行 issue），
+ * 审计日志仍由前端按状态机模拟。
  */
 function buildAuditLogs(t: AgentTicket): AuditLogEntry[] {
   const logs: AuditLogEntry[] = []
@@ -404,44 +341,29 @@ function buildAuditLogs(t: AgentTicket): AuditLogEntry[] {
   return logs
 }
 
+/** 创建者展示（creator_type=agent → 坐席工号；customer → 客户号码；其他 → 访客）。 */
+function creatorLabel(t: AgentTicket): string {
+  if (t.creator_type === 'agent') return `坐席 ${t.creator_id}`
+  if (t.creator_type === 'customer') return t.customer_phone ?? '客户'
+  return t.contact_name ?? '访客'
+}
+
 /**
  * 拉取坐席工单详情（US-28：基本信息 + 状态时间线 + 审计日志）。
- * #44/#45 落地后：GET /api/agents/tickets/{id}（坐席 Bearer，含 timeline/audit_logs）。
+ * GET /api/agents/tickets/{id}（B14 AC3）；timeline/audit_logs 前端推导（见上边界）。
  */
 export async function getAgentTicketDetail(
   ticketId: number,
-  _token: string,
+  token: string,
 ): Promise<AgentTicketDetail> {
-  const current = _mockTickets.find((t) => t.id === ticketId)
-  if (!current) throw new Error('工单不存在')
+  const response = await expectOk(
+    await fetch(`/api/agents/tickets/${ticketId}`, { headers: authHeaders(token) }),
+  )
+  const base = (await response.json()) as AgentTicket
   return {
-    ...current,
-    creator: current.customer_phone ?? '访客',
-    timeline: buildTimeline(current),
-    audit_logs: buildAuditLogs(current),
+    ...base,
+    creator: creatorLabel(base),
+    timeline: buildTimeline(base),
+    audit_logs: buildAuditLogs(base),
   }
-}
-
-/**
- * 派单到技能组（详情页操作区 US-24）：待派单（工单类 pending）→ 已派单 + 记录技能组。
- * #44/#45 落地后：POST /api/agents/tickets/{id}/dispatch（技能组参数，坐席 Bearer）。
- */
-export async function dispatchTicketToGroup(
-  ticketId: number,
-  skillGroup: string,
-  _token: string,
-): Promise<AgentTicket> {
-  const current = _mockTickets.find((t) => t.id === ticketId)
-  if (!current) throw new Error('工单不存在')
-  return replaceMock({ ...current, status: 'dispatched', skill_group: skillGroup })
-}
-
-/**
- * 取消工单（详情页操作区 US-24）：非终态 → 已取消（状态机允许从非终态进入 cancelled）。
- * #44/#45 落地后：POST /api/agents/tickets/{id}/cancel（坐席 Bearer）。
- */
-export async function cancelTicket(ticketId: number, _token: string): Promise<AgentTicket> {
-  const current = _mockTickets.find((t) => t.id === ticketId)
-  if (!current) throw new Error('工单不存在')
-  return replaceMock({ ...current, status: 'cancelled' })
 }

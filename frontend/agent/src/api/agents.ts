@@ -6,10 +6,8 @@
  *   200 `{access_token, refresh_token, token_type}` | 401 `{detail: "工号或密码错误"}`。
  * 队列契约（backend/app/agents/routes.py + schemas.py）：
  *   GET  /api/agents/queues（坐席 Bearer）→ 200 list[QueueItemOut]
- *
- * 数据缺口（backend issue #42）：
- *   - QueueItemOut 无转接原因（handoff_reason）字段；
- *   - 坐席无查询回呼请求工单的端点 —— 回呼分组由 queue store 本地 mock 驱动。
+ *   GET  /api/agents/callbacks（坐席 Bearer）→ 200 list[CallbackItemOut]
+ *     （B11 issue #42 AC3：回呼请求工单列表，US-29）
  */
 
 export interface TokenResponse {
@@ -59,6 +57,18 @@ export interface QueueItem {
   customer_id: number | null
   customer_phone: string | null
   last_user_message: string | null
+  reason: string | null // 转接原因（Conversation.handoff_reason，PRD queue 页转接原因 Caption）
+}
+
+/** 回呼请求工单项（镜像后端 CallbackItemOut，B11 issue #42 AC3，US-29）。 */
+export interface CallbackItem {
+  ticket_id: number
+  conversation_id: number
+  customer_id: number | null
+  customer_phone: string | null // 脱敏（138****0001）
+  content: string // 含 [回呼请求] 前缀（B8 离线兜底内容模板）
+  skill_group: string | null
+  created_at: string
 }
 
 /** Bearer 请求头（坐席 JWT，来自 auth store `agent.auth`）。 */
@@ -86,4 +96,12 @@ export async function listQueueItems(token: string): Promise<QueueItem[]> {
     await fetch('/api/agents/queues', { headers: authHeaders(token) }),
   )
   return (await response.json()) as QueueItem[]
+}
+
+/** 拉取回呼请求工单列表（US-29；B8 离线兜底产物，号码已脱敏）。 */
+export async function listCallbacks(token: string): Promise<CallbackItem[]> {
+  const response = await expectOk(
+    await fetch('/api/agents/callbacks', { headers: authHeaders(token) }),
+  )
+  return (await response.json()) as CallbackItem[]
 }

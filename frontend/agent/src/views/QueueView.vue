@@ -4,13 +4,14 @@
  *
  * 继承 agent-console app-shell，侧栏选中「待接入」（路由 /queue）。
  * 规格：PRD 页面清单 §queue「UI 设计描述」+ 变体段；DESIGN.md §5 列表行/按钮/空状态/骨架屏。
- * 数据缺口：转接原因 + 回呼分组由本地 mock 驱动（backend issue #42）。
+ * 数据源：GET /agents/queues（转接原因 reason = Conversation.handoff_reason）+ GET /agents/callbacks。
  */
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { useAuthStore } from '../stores/auth'
 import { useQueueStore } from '../stores/queue'
+import { handoffReasonLabel } from '../api/activeChat'
 
 const router = useRouter()
 const queue = useQueueStore()
@@ -98,7 +99,9 @@ function waitLabel(createdAt: string): string {
         </span>
         <div class="queue-item__body">
           <p class="queue-item__title">{{ item.last_user_message ?? '转接会话' }}</p>
-          <p class="queue-item__meta">转接请求 · {{ waitLabel(item.created_at) }}</p>
+          <p class="queue-item__meta">
+            {{ handoffReasonLabel(item.reason) }} · {{ waitLabel(item.created_at) }}
+          </p>
         </div>
         <button
           data-testid="queue-accept-btn"
@@ -126,7 +129,7 @@ function waitLabel(createdAt: string): string {
       <p class="empty-state__hint">有新转接会话将在此显示</p>
     </div>
 
-    <!-- 回呼请求分组（离线兜底，US-29；数据源 mock，TODO #42） -->
+    <!-- 回呼请求分组（离线兜底，US-29；数据源 GET /agents/callbacks） -->
     <div
       v-if="!queue.loading && queue.callbacks.length > 0"
       data-testid="queue-callback-group"

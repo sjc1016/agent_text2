@@ -11,7 +11,6 @@ import {
   dispatchTicket,
   executeTicket,
   closeTicket,
-  createAgentTicket,
   type AgentTicket,
 } from '../api/tickets'
 
@@ -19,9 +18,9 @@ import {
  * #22 UI-A-5 循环：TicketsView（States 矩阵逐行验证）。
  *
  * 行序循环：default → row-selected → empty → loading → no-result
- * （default 内部按验收标准细分：行内操作 US-24/27、复核 US-25、建单 US-23、回呼 US-29）。
+ * （default 内部按验收标准细分：行内操作 US-24/27、复核 US-25、回呼 US-29）。
  * 测行为不测像素：data-testid 结构 + 可观察行为。
- * 数据缺口：坐席视角工单端点缺失（backend #44/#45 B12）→ api mock 驱动（同 #20/#21 模式）。
+ * 数据源：api/tickets.ts 真契约（B14 #55）；建单在 active-chat，本页无建单入口。
  */
 
 vi.mock('../api/tickets', async (importOriginal) => {
@@ -32,7 +31,6 @@ vi.mock('../api/tickets', async (importOriginal) => {
     dispatchTicket: vi.fn(),
     executeTicket: vi.fn(),
     closeTicket: vi.fn(),
-    createAgentTicket: vi.fn(),
   }
 })
 
@@ -40,7 +38,6 @@ const mockedListAgentTickets = vi.mocked(listAgentTickets)
 const mockedDispatchTicket = vi.mocked(dispatchTicket)
 const mockedExecuteTicket = vi.mocked(executeTicket)
 const mockedCloseTicket = vi.mocked(closeTicket)
-const mockedCreateAgentTicket = vi.mocked(createAgentTicket)
 
 let router: Router
 
@@ -52,10 +49,13 @@ function ticket(overrides: Partial<AgentTicket> = {}): AgentTicket {
     ticket_type: 'ticketing',
     status: 'pending',
     content: '宽带故障报修',
-    skill_group: 'fault',
+    skill_group: '故障报修组',
+    customer_id: 10,
     customer_phone: '138****0001',
     contact_name: null,
     contact_phone: null,
+    creator_type: 'customer',
+    creator_id: null,
     created_at: '2026-08-03T01:00:00Z',
     ...overrides,
   }
@@ -95,7 +95,6 @@ beforeEach(() => {
   mockedDispatchTicket.mockReset()
   mockedExecuteTicket.mockReset()
   mockedCloseTicket.mockReset()
-  mockedCreateAgentTicket.mockReset()
 })
 
 afterEach(() => {
@@ -118,7 +117,7 @@ describe('TicketsView — default（PRD §tickets(agent-console) UI 设计描述
         ticket_type: 'transaction',
         status: 'processing',
         content: '停机保号',
-        skill_group: 'plan',
+        skill_group: '套餐业务组',
         customer_phone: '139****0002',
       }),
       ticket({ id: 14, ticket_type: 'ticketing', status: 'dispatched', content: '5G 套餐升级' }),
@@ -361,35 +360,6 @@ describe('TicketsView — 复核执行（US-25，待执行办理工单服务密�
     expect(mockedExecuteTicket).toHaveBeenCalledWith(12, '123456', 'at')
     expect(wrapper.find('[data-testid="reauth-modal"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="ticket-status-badge"]').text()).toBe('执行中')
-  })
-})
-
-describe('TicketsView — 创建工单入口（US-23）', () => {
-  it('「创建工单」→ Modal（类型 Select + 内容 textarea + 主按钮「创建」），提交后工单追加列表', async () => {
-    mockedCreateAgentTicket.mockResolvedValue(
-      ticket({ id: 99, ticket_type: 'ticketing', content: '宽带故障报修' }),
-    )
-    const { wrapper } = await mountTickets([ticket({ id: 11, status: 'closed' })])
-
-    // 打开创建工单 Modal
-    await wrapper.find('[data-testid="create-ticket-btn"]').trigger('click')
-    const modal = wrapper.find('[data-testid="create-ticket-modal"]')
-    expect(modal.exists()).toBe(true)
-    expect(modal.find('[data-testid="ticket-type-select"]').exists()).toBe(true)
-    expect(modal.find('[data-testid="ticket-content"]').exists()).toBe(true)
-
-    // 选择类型 + 输入内容 → 提交
-    await modal.find('[data-testid="ticket-type-select"]').setValue('ticketing')
-    await modal.find('[data-testid="ticket-content"]').setValue('宽带故障报修')
-    await modal.find('[data-testid="create-ticket-submit"]').trigger('click')
-    await flushPromises()
-
-    expect(mockedCreateAgentTicket).toHaveBeenCalledWith(
-      { ticket_type: 'ticketing', content: '宽带故障报修' },
-      'at',
-    )
-    expect(wrapper.find('[data-testid="create-ticket-modal"]').exists()).toBe(false)
-    expect(wrapper.findAll('[data-testid="ticket-row"]')).toHaveLength(2)
   })
 })
 

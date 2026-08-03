@@ -9,6 +9,7 @@ import { routes } from '../router'
 // QueueView onMounted 触发队列拉取（#20），此处 mock 避免真实 fetch。
 vi.mock('../api/agents', () => ({
   listQueueItems: vi.fn().mockResolvedValue([]),
+  listCallbacks: vi.fn().mockResolvedValue([]),
 }))
 
 describe('App', () => {

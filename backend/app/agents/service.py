@@ -192,3 +192,34 @@ def list_callback_tickets(db: Session) -> list[CallbackTicketEntry]:
                 customer_phone = mask_phone(customer.phone)
         entries.append(CallbackTicketEntry(ticket=ticket, customer_phone=customer_phone))
     return entries
+
+
+@dataclass
+class TicketEntry:
+    """坐席全局工单项（ticket + 脱敏号码）。"""
+
+    ticket: Ticket
+    customer_phone: str | None
+
+
+def list_all_tickets(db: Session) -> list[TicketEntry]:
+    """返回全部工单（US-27，坐席工单管理页数据源），按创建时间倒序。
+
+    跨会话汇总全部 Ticket；号码经 mask_phone 脱敏（138****0001）。
+    同 created_at 按 id 倒序（新单在前，保证时间戳粒度不足时排序稳定）。
+    """
+    tickets = (
+        db.execute(select(Ticket).order_by(Ticket.created_at.desc(), Ticket.id.desc()))
+        .scalars()
+        .all()
+    )
+
+    entries: list[TicketEntry] = []
+    for ticket in tickets:
+        customer_phone = None
+        if ticket.customer_id is not None:
+            customer = db.get(Customer, ticket.customer_id)
+            if customer is not None:
+                customer_phone = mask_phone(customer.phone)
+        entries.append(TicketEntry(ticket=ticket, customer_phone=customer_phone))
+    return entries

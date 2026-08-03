@@ -53,10 +53,13 @@ function ticket(overrides: Partial<AgentTicket> = {}): AgentTicket {
     ticket_type: 'ticketing',
     status: 'pending',
     content: '宽带故障报修',
-    skill_group: 'fault',
+    skill_group: '故障报修组',
+    customer_id: 10,
     customer_phone: '138****0001',
     contact_name: null,
     contact_phone: null,
+    creator_type: 'customer',
+    creator_id: null,
     created_at: '2026-08-03T01:00:00Z',
     ...overrides,
   }
@@ -274,7 +277,7 @@ describe('TicketDetailView — 操作交互（US-24 派单/关闭/取消、US-25
     mockedGetAgentTicketDetail.mockResolvedValueOnce(
       detail({
         status: 'dispatched',
-        skill_group: 'fault',
+        skill_group: '故障报修组',
         timeline: [
           { status: 'pending', at: '2026-08-03T01:00:00Z', operator: '客户', is_current: false },
           {
@@ -287,11 +290,11 @@ describe('TicketDetailView — 操作交互（US-24 派单/关闭/取消、US-25
       }),
     )
 
-    await wrapper.find('[data-testid="skill-group-select"]').setValue('fault')
+    await wrapper.find('[data-testid="skill-group-select"]').setValue('故障报修组')
     await wrapper.find('[data-testid="dispatch-btn"]').trigger('click')
     await flushPromises()
 
-    expect(mockedDispatchTicketToGroup).toHaveBeenCalledWith(11, 'fault', 'at')
+    expect(mockedDispatchTicketToGroup).toHaveBeenCalledWith(11, '故障报修组', 'at')
     expect(wrapper.find('[data-testid="detail-status-badge"]').text()).toBe('已派单')
   })
 
