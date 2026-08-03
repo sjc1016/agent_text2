@@ -124,6 +124,20 @@ describe('router — auth guard（issue #58 验收标准 1/2）', () => {
   })
 })
 
+describe('router — 登出后受保护路由拦截（issue #60 验收标准 3）', () => {
+  it('登出后立即访问受保护路由 → 重定向 /login?redirect=目标', async () => {
+    const { router } = await mountWithAuthGuard('/queue', true)
+    expect(router.currentRoute.value.path).toBe('/queue')
+
+    useAuthStore().logout()
+    await router.push('/tickets')
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/login')
+    expect(router.currentRoute.value.query.redirect).toBe('/tickets')
+  })
+})
+
 describe('router — 凭证失效 401 引导回登录页（issue #58 验收标准 4）', () => {
   it('派发 auth-expired 事件 → 清除本地凭证 + 跳回 /login?redirect=当前路径', async () => {
     const { router, pinia } = await mountWithAuthGuard('/queue', true)
