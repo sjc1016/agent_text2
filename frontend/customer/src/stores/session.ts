@@ -121,5 +121,13 @@ export const useSessionStore = defineStore('session', {
         JSON.stringify({ ...tokens, maskedPhone: this.maskedPhone }),
       )
     },
+
+    /**
+     * 消费 WS `conversation.state` 事件写入状态机当前态（#24 UI-C-3）。
+     * 仅状态流转，不触碰 JWT 凭证；顶栏标题/徽章随 resolveHeader 派生变化。
+     */
+    setConversationState(state: ConversationState) {
+      this.conversationState = state
+    },
   },
 })

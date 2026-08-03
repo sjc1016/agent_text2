@@ -270,6 +270,31 @@
             "HTTPBearer": []
           }
         ]
+      },
+      "post": {
+        "tags": [
+          "conversation"
+        ],
+        "summary": "Create Conversation Route",
+        "description": "认证客户创建新会话（PRD › API 契约 /conversations 会话 CRUD；#24 对话页入口）。\n\n新会话以 authenticated 起步（客户已认证）；消息流经 WS /ws 发送到该会话。",
+        "operationId": "create_conversation_route_conversations_post",
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/conversations/{conversation_id}/messages": {

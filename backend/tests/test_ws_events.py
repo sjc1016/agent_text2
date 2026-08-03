@@ -118,8 +118,13 @@ def test_ws_message_new_on_client_message(ws_client, db):
     assert isinstance(payload["created_at"], str)
 
 
-def test_ws_message_new_persists_message(ws_client, db):
-    """客户端发消息后，DB 中持久化该 user 消息（入对话流）。"""
+def test_ws_message_new_persists_message(ws_client, db, recv_ws):
+    """客户端发消息后，DB 中持久化该 user 消息（入对话流）。
+
+    #24 对话流接线后，WS 消息会经默认助理服务生成 assistant 回复并一并持久化；
+    首条仍为用户消息（顺序 user → assistant）。消费至 assistant 回复到达再断言，
+    避免连接提前关闭导致服务端流式任务被中断（持久化竞态）。
+    """
     from sqlalchemy import select
 
     from app.auth.security import create_access_token
@@ -134,12 +139,22 @@ def test_ws_message_new_persists_message(ws_client, db):
     with ws_client.websocket_connect(f"/ws?token={token}") as ws:
         ws.receive_json()  # system.message
         ws.send_json({"type": "message", "conversation_id": conv.id, "content": "持久化测试"})
-        ws.receive_json()  # message.new
+        ws.receive_json()  # message.new（user 回显）
+        # 消费至 assistant 回复到达（默认助理服务已接线）
+        while True:
+            ev = recv_ws(ws)
+            if ev["event"] == "message.new" and ev["data"]["source"] == "assistant":
+                break
 
-    msgs = list(db.execute(select(Message).where(Message.conversation_id == conv.id)).scalars())
-    assert len(msgs) == 1
+    msgs = list(
+        db.execute(
+            select(Message).where(Message.conversation_id == conv.id).order_by(Message.id)
+        ).scalars()
+    )
+    assert len(msgs) == 2
     assert msgs[0].source == "user"
     assert msgs[0].content == "持久化测试"
+    assert msgs[1].source == "assistant"
 
 
 def test_ws_message_new_rejects_other_customer_conversation(ws_client, db):

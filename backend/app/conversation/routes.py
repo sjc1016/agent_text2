@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import CurrentCustomer
 from app.conversation.schemas import ConversationOut, MessageOut
 from app.conversation.service import (
+    create_conversation,
     get_customer_conversation_or_none,
     list_conversations_for_customer,
     list_messages_for_conversation,
@@ -34,6 +35,15 @@ DbSession = Annotated[Session, Depends(get_db)]
 def list_conversations(current: CurrentCustomer, db: DbSession) -> list[Conversation]:
     """当前客户的会话列表（未认证 401 由 CurrentCustomer 守卫）。"""
     return list_conversations_for_customer(db, current)
+
+
+@router.post("", response_model=ConversationOut, status_code=status.HTTP_201_CREATED)
+def create_conversation_route(current: CurrentCustomer, db: DbSession) -> Conversation:
+    """认证客户创建新会话（PRD › API 契约 /conversations 会话 CRUD；#24 对话页入口）。
+
+    新会话以 authenticated 起步（客户已认证）；消息流经 WS /ws 发送到该会话。
+    """
+    return create_conversation(db, current)
 
 
 @router.get("/{conversation_id}/messages", response_model=list[MessageOut])

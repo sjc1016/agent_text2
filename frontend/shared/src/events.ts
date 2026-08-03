@@ -41,9 +41,9 @@ export type WsEventName = (typeof WS_EVENT_NAMES)[number]
  * 与 backend/app/ws/events.py 的 MessageNewPayload / SystemMessagePayload 镜像。
  * B2 循环6（issue #7 验收4）：细化 'conversation.state'，
  * 与 backend/app/ws/events.py 的 ConversationStatePayload 镜像。
+ * #24 UI-C-3：细化 'llm.token'，与 backend/app/ws/events.py 的 LlmTokenPayload 镜像。
  *
  * TODO（后续切片）：
- *   - conversation 切片：细化 'llm.token'
  *   - transaction 切片（B6）：'second.confirm' | 'reauth.required' 已细化（见下）
  *   - 'handoff.start' | 'handoff.end' 已由 B8（issue #17）细化（见下）
  */
@@ -65,6 +65,16 @@ export interface MessageNewPayload {
 export interface SystemMessagePayload {
   content: string
   created_at: string // ISO 字符串
+}
+
+/**
+ * llm.token payload：LLM 流式生成的分片 token（PRD line 282；US-1，#24 细化）。
+ * 镜像 backend/app/ws/events.py LlmTokenPayload；Assistant 生成期间逐分片推送，
+ * 前端据此把「信号脉冲」loading 气泡切换为可渲染文本并逐 token 追加。
+ */
+export interface LlmTokenPayload {
+  conversation_id: number
+  token: string
 }
 
 /** conversation.state payload：会话状态机流转通知（PRD line 286）。 */
@@ -146,7 +156,7 @@ export interface ReauthRequiredPayload {
 }
 
 export interface WsEventPayloadMap {
-  'llm.token': Record<string, unknown>
+  'llm.token': LlmTokenPayload
   'message.new': MessageNewPayload
   'handoff.start': HandoffStartPayload
   'handoff.end': HandoffEndPayload

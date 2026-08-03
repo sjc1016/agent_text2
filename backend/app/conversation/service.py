@@ -41,6 +41,20 @@ def list_conversations_for_customer(db: Session, customer: Customer) -> list[Con
     return list(db.execute(stmt).scalars().all())
 
 
+def create_conversation(db: Session, customer: Customer) -> Conversation:
+    """为认证客户创建一个新会话（status=authenticated，PRD line 286）。
+
+    #24 UI-C-3 集成切片：对话页首次进入需要会话承载消息流（US-1 / US-18）。
+    会话由客户发起（认证即 authenticated）；访客会话（customer_id=None）由后续
+    Visitor 流程另行支持，本切片不引入。
+    """
+    conv = Conversation(customer_id=customer.id, status="authenticated")
+    db.add(conv)
+    db.commit()
+    db.refresh(conv)
+    return conv
+
+
 def get_customer_conversation_or_none(
     db: Session, customer: Customer, conversation_id: int
 ) -> Conversation | None:

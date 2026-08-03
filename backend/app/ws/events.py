@@ -44,6 +44,17 @@ class WsEventName(str, Enum):
 EVENT_NAMES: frozenset[str] = frozenset(member.value for member in WsEventName)
 
 
+class LlmTokenPayload(BaseModel):
+    """llm.token 事件 payload（LLM 流式生成的分片 token，PRD line 282；US-1）。
+
+    Assistant 生成期间逐分片推送，前端据此把「信号脉冲」loading 气泡切换为
+    可渲染文本并逐 token 追加；conversation_id 供前端定位目标会话。
+    """
+
+    conversation_id: int
+    token: str
+
+
 class MessageNewPayload(BaseModel):
     """message.new 事件 payload（与 REST MessageOut 字段镜像，snake_case）。
 
