@@ -415,9 +415,7 @@ def list_all_tickets_endpoint(db: DbSession, current: CurrentAgent) -> list[Agen
 
 
 @router.get("/tickets/{ticket_id}", response_model=AgentTicketOut)
-def get_ticket_detail(
-    ticket_id: int, db: DbSession, current: CurrentAgent
-) -> AgentTicketOut:
+def get_ticket_detail(ticket_id: int, db: DbSession, current: CurrentAgent) -> AgentTicketOut:
     """坐席读工单详情（US-28，工单详情页数据源）。
 
     B14（issue #55 AC3）：基本信息 + 脱敏号码 + 技能组 + 创建者；不存在 → 404。
@@ -446,9 +444,7 @@ async def dispatch_ticket(
 
 
 @router.post("/tickets/{ticket_id}/close", response_model=AgentTicketOut)
-async def close_ticket(
-    ticket_id: int, db: DbSession, current: CurrentAgent
-) -> AgentTicketOut:
+async def close_ticket(ticket_id: int, db: DbSession, current: CurrentAgent) -> AgentTicketOut:
     """坐席关闭（US-24）：工单类 awaiting_confirmation → closed（触发通知）。"""
     ticket = _get_agent_ticket_or_404(db, ticket_id)
     ticket = await _transition_agent_ticket(db, ticket, "closed", current)
@@ -456,9 +452,7 @@ async def close_ticket(
 
 
 @router.post("/tickets/{ticket_id}/cancel", response_model=AgentTicketOut)
-async def cancel_ticket(
-    ticket_id: int, db: DbSession, current: CurrentAgent
-) -> AgentTicketOut:
+async def cancel_ticket(ticket_id: int, db: DbSession, current: CurrentAgent) -> AgentTicketOut:
     """坐席取消（US-24）：非终态 → cancelled（不触发通知）。"""
     ticket = _get_agent_ticket_or_404(db, ticket_id)
     ticket = await _transition_agent_ticket(db, ticket, "cancelled", current)
