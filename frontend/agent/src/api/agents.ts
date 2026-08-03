@@ -4,6 +4,12 @@
  * 基址 `/api`：ADR 0006 / deploy/nginx.conf 反代契约（前端一律 `/api/...` → nginx → 后端）。
  * B9 契约：POST /agents/login `{employee_id, password}` →
  *   200 `{access_token, refresh_token, token_type}` | 401 `{detail: "工号或密码错误"}`。
+ * 队列契约（backend/app/agents/routes.py + schemas.py）：
+ *   GET  /api/agents/queues（坐席 Bearer）→ 200 list[QueueItemOut]
+ *
+ * 数据缺口（backend issue #42）：
+ *   - QueueItemOut 无转接原因（handoff_reason）字段；
+ *   - 坐席无查询回呼请求工单的端点 —— 回呼分组由 queue store 本地 mock 驱动。
  */
 
 export interface TokenResponse {
@@ -43,4 +49,41 @@ export async function agentLogin(employeeId: string, password: string): Promise<
   }
 
   return (await response.json()) as TokenResponse
+}
+
+/** 待接入队列项（镜像后端 QueueItemOut）。 */
+export interface QueueItem {
+  conversation_id: number
+  status: string
+  created_at: string
+  customer_id: number | null
+  customer_phone: string | null
+  last_user_message: string | null
+}
+
+/** Bearer 请求头（坐席 JWT，来自 auth store `agent.auth`）。 */
+function authHeaders(token: string): Record<string, string> {
+  return { Authorization: `Bearer ${token}` }
+}
+
+async function expectOk(response: Response): Promise<Response> {
+  if (!response.ok) {
+    let detail = '请求失败'
+    try {
+      const body = (await response.json()) as { detail?: unknown }
+      if (typeof body.detail === 'string') detail = body.detail
+    } catch {
+      // 非 JSON 错误体：沿用默认文案
+    }
+    throw new Error(detail)
+  }
+  return response
+}
+
+/** 拉取待接入 Handoff 会话列表（US-20；按创建时间升序，号码已脱敏）。 */
+export async function listQueueItems(token: string): Promise<QueueItem[]> {
+  const response = await expectOk(
+    await fetch('/api/agents/queues', { headers: authHeaders(token) }),
+  )
+  return (await response.json()) as QueueItem[]
 }
