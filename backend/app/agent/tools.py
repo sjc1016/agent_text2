@@ -163,6 +163,7 @@ class ToolRegistry:
             conversation_id=ctx.conversation_id,
             params=dict(call.params),
             audit_hook=ctx.audit_hook,
+            db=ctx.db,
         )
         try:
             content = self.invoke(call.name, tool_ctx)

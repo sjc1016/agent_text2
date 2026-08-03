@@ -27,12 +27,14 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Annotated, Any
+from typing import Annotated, Any, Callable
 
 import jwt
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
+from app.agent.service import AssistantService
+from app.agent.tools import ToolCall, ToolResult
 from app.auth.security import decode_token, get_agent_by_id, get_customer_by_id
 from app.conversation.service import (
     create_message,
@@ -44,7 +46,9 @@ from app.models import Conversation, Customer, Message, User
 from app.ws.events import (
     ConversationStatePayload,
     HandoffEndPayload,
+    LlmTokenPayload,
     MessageNewPayload,
+    SecondConfirmPayload,
     SystemMessagePayload,
     WsEventName,
 )
@@ -60,6 +64,103 @@ _SESSION_OPENED_CONTENT = "会话已建立，请问有什么可以帮您？"
 _AGENT_SESSION_OPENED_CONTENT = "坐席工作台已连接"
 
 DbSession = Annotated[Session, Depends(get_db)]
+
+
+def _build_default_assistant_service() -> AssistantService:
+    """构建 v1 默认助理服务（FakeListLLM 占位 + 全量工具注册）。
+
+    PRD 依据：B3（issue #9）LLM 抽象以 FakeListLLM 为 CI 确定性 seam；v1 未配置
+    真实 LLM provider（真实接入时替换为 LangChain chat model，接口不变）。注册
+    通用咨询 / 查询 / 办理三类 tool，供对话流端到端调用（#24 集成切片，US-1）。
+    """
+    from app.agent.general_tools import register_general_info_tools
+    from app.agent.inquiry_tools import register_inquiry_tools
+    from app.agent.llm import FakeListLLM
+    from app.agent.tools import ToolRegistry
+    from app.transaction.tools import register_transaction_tools
+
+    registry = ToolRegistry()
+    register_general_info_tools(registry)
+    register_inquiry_tools(registry)
+    register_transaction_tools(registry)
+    return AssistantService(
+        llm=FakeListLLM(responses=["您好，我是电信客服助理，请问有什么可以帮您？"]),
+        tool_registry=registry,
+    )
+
+
+_assistant_service: AssistantService | None = None
+
+
+def get_assistant_service() -> AssistantService:
+    """FastAPI 依赖：返回助理服务单例（测试经 dependency_overrides 注入）。"""
+    global _assistant_service
+    if _assistant_service is None:
+        _assistant_service = _build_default_assistant_service()
+    return _assistant_service
+
+
+def _make_audit_hook(db: Session) -> Callable[[dict], None]:
+    """构造 tool 调用审计 hook（经 write_audit_log 留痕，CONTEXT › 审计日志）。
+
+    动作名取 entry["type"]（tool_call / inquiry.* / transaction.initiate 等）；
+    查询/办理等敏感操作在 tool 内经 ctx.audit_hook 回调本函数。
+    """
+
+    def hook(entry: dict) -> None:
+        from app.auth.audit import write_audit_log
+
+        write_audit_log(
+            db,
+            actor_type="assistant",
+            action=entry.get("type") or "assistant.tool_call",
+            actor_id=entry.get("customer_id"),
+            detail=entry,
+        )
+
+    return hook
+
+
+class _WsChatCallbacks:
+    """StreamingCallbacks 的 WS 路由实现：流式 token → llm.token 推送 + 二次确认解析。
+
+    on_tool_start：tool 内部执行不对外产出 token（预留提示位）。
+    on_tool_end：办理类 tool（B6）成功返回 JSON 标记
+      {"status": "awaiting_confirmation", "transaction_type": ...,
+       "business_impact": {...}}（transaction/tools.py）→ 解析推送 second.confirm；
+      会话已由 tool 内服务层流转 in_progress，conversation.state 由
+      _handle_client_message 在 chat 结束后按状态差量推送（与 REST 发起顺序一致）。
+    """
+
+    def __init__(self, websocket: WebSocket, conversation_id: int) -> None:
+        self._ws = websocket
+        self._conversation_id = conversation_id
+
+    async def on_token(self, token: str) -> None:
+        payload = LlmTokenPayload(conversation_id=self._conversation_id, token=token).model_dump(
+            mode="json"
+        )
+        await _send_event(self._ws, WsEventName.LLM_TOKEN, payload)
+
+    async def on_tool_start(self, call: ToolCall) -> None:
+        return None
+
+    async def on_tool_end(self, result: ToolResult) -> None:
+        if not result.success:
+            return
+        try:
+            data = json.loads(result.content)
+        except (json.JSONDecodeError, TypeError):
+            return
+        if not isinstance(data, dict) or data.get("status") != "awaiting_confirmation":
+            return
+        payload = SecondConfirmPayload(
+            conversation_id=self._conversation_id,
+            transaction_type=str(data.get("transaction_type", "")),
+            business_impact=data.get("business_impact") or {},
+            requested_at=datetime.now(timezone.utc),
+        ).model_dump(mode="json")
+        await _send_event(self._ws, WsEventName.SECOND_CONFIRM, payload)
 
 
 @dataclass
@@ -142,12 +243,17 @@ async def _push_conversation_state(
 
 
 @router.websocket("/ws")
-async def ws_endpoint(websocket: WebSocket, db: DbSession) -> None:
+async def ws_endpoint(
+    websocket: WebSocket,
+    db: DbSession,
+    assistant: Annotated[AssistantService, Depends(get_assistant_service)],
+) -> None:
     """WS 入口：JWT 查询参数鉴权 → accept → 推建立提示 system.message → 事件收发循环。
 
     客户连接：accept 后推「会话已建立」+ hub 注册（B7 客户侧推送）。
     坐席连接：accept 后推「坐席工作台已连接」+ hub 坐席侧注册（B9 agent.status 推送）。
     未授权（无 token / 非法 / 主体不存在）→ close code 4401。
+    assistant：客户消息的 LLM 对话流依赖（#24 集成切片；测试经 dependency_overrides 注入）。
     """
     token = websocket.query_params.get("token")
     identity = resolve_ws_identity(db, token)
@@ -169,7 +275,7 @@ async def ws_endpoint(websocket: WebSocket, db: DbSession) -> None:
     try:
         while True:
             raw = await websocket.receive_text()
-            await _handle_inbound(websocket, db, identity, raw)
+            await _handle_inbound(websocket, db, identity, raw, assistant)
     except WebSocketDisconnect:
         pass
     finally:
@@ -180,11 +286,15 @@ async def ws_endpoint(websocket: WebSocket, db: DbSession) -> None:
 
 
 async def _handle_inbound(
-    websocket: WebSocket, db: Session, identity: WsIdentity, raw: str
+    websocket: WebSocket,
+    db: Session,
+    identity: WsIdentity,
+    raw: str,
+    assistant: AssistantService,
 ) -> None:
     """处理入站消息：解析 JSON → 按身份与类型分发。
 
-    客户（kind=customer）：message / state_transition（B2）。
+    客户（kind=customer）：message（LLM 对话流）/ state_transition（B2）/ handoff（B8）。
     坐席（kind=agent）：message（坐席消息）/ take_over（接入）/ state_transition（转回）。
     非法 JSON / 未知 type 暂忽略（后续切片补错误反馈）。
     """
@@ -205,7 +315,7 @@ async def _handle_inbound(
     assert isinstance(subject, Customer), "customer 身份主体必须是 Customer"
     msg_type = data.get("type")
     if msg_type == "message":
-        await _handle_client_message(websocket, db, subject, data)
+        await _handle_client_message(websocket, db, subject, data, assistant)
     elif msg_type == "state_transition":
         await _handle_state_transition(websocket, db, subject, data)
     elif msg_type == "handoff":
@@ -356,10 +466,54 @@ async def _handle_agent_transfer_back(
         await push_handoff_end(conv)
 
 
+async def _maybe_auto_handoff(
+    websocket: WebSocket, db: Session, conv: Conversation, content: str
+) -> bool:
+    """自动评估 Handoff 触发（CONTEXT › 转接触发；#24 集成切片，US-15）。
+
+    消息文本可推导的条件：明确请求（「转人工」「找客服」等关键词）；其余显式
+    注入类条件（超出能力/办理失败/合规风险）由调用方在对应流程注入，本入口
+    只评估消息可推导部分。命中 → 触发转接（trigger_handoff）并推送：
+      system.message（转接提示）+ conversation.state（→ handed_off）
+      + handoff.start（reason / offline_fallback）。
+    返回 True 表示已转接（调用方跳过 LLM 对话流）。
+    """
+    from app.handoff.service import trigger_handoff
+    from app.handoff.triggers import TriggerContext, evaluate_handoff_triggers
+
+    decision = evaluate_handoff_triggers(TriggerContext(last_user_messages=[content]))
+    if not decision.triggered or decision.reason is None:
+        return False
+
+    old_state = conv.status
+    outcome = trigger_handoff(db, conv, decision.reason)
+
+    await _push_system_message(websocket, "正在为您转接人工坐席，请稍候")
+    await _push_conversation_state(websocket, conv, old_state)
+    if conv.customer_id is not None:
+        await push_handoff_start(
+            conv,
+            outcome.reason.value,
+            outcome.offline_fallback,
+            outcome.ticket_id,
+        )
+    return True
+
+
 async def _handle_client_message(
-    websocket: WebSocket, db: Session, customer: Customer, data: dict[str, Any]
+    websocket: WebSocket,
+    db: Session,
+    customer: Customer,
+    data: dict[str, Any],
+    assistant: AssistantService,
 ) -> None:
-    """处理客户端发消息：校验会话归属 → 持久化 user 消息 → 推 message.new。
+    """处理客户端发消息：校验会话归属 → 持久化 user 消息 → 自动 Handoff / LLM 流式回复。
+
+    对话流（#24 集成切片，US-1）：
+      1. 载入既有对话历史（幂等）→ 持久化 user 消息并推 message.new（即时回显）
+      1b. 自动 Handoff 评估：显式「转人工」等命中 → 触发转接，不再进入 LLM
+      2. AssistantService 流式生成：逐分片推 llm.token（前端信号脉冲 → 文本）
+      3. 最终回复持久化为 assistant 消息并推 message.new
 
     会话不属于当前客户 → 推 system.message 无权限提示（不泄露他人会话存在性，
     与 REST list_messages 边界一致）；不持久化、不推 message.new。
@@ -373,10 +527,45 @@ async def _handle_client_message(
     if conv is None:
         await _push_system_message(websocket, "无权操作该会话")
         return
+    if conv.status == "handed_off":
+        # 已在转接中：不进入 LLM 对话流（前端输入已禁用；防御性兜底）
+        return
 
+    # 1. 先载入既有历史（幂等），chat() 会追加本轮 user 消息——避免重复入库
+    assistant.load_history_from_db(db, conversation_id)
     message = create_message(db, conv.id, "user", content)
     db.commit()
     await _push_message_new(websocket, message)
+
+    # 1b. 自动 Handoff 评估（显式转人工等）——命中则跳过 LLM
+    if await _maybe_auto_handoff(websocket, db, conv, content):
+        return
+
+    # 2. LLM 流式生成（on_token → llm.token 推送；on_tool_end → 二次确认解析）
+    state_before_chat = conv.status
+    callbacks = _WsChatCallbacks(websocket, conv.id)
+    tokens: list[str] = []
+    async for token in assistant.chat(
+        conversation_id=conv.id,
+        user_message=content,
+        customer_id=customer.id,
+        callbacks=callbacks,
+        db=db,
+        audit_hook=_make_audit_hook(db),
+    ):
+        tokens.append(token)
+
+    # 2b. 会话状态差量推送（tool 内可能流转：办理发起 authenticated → in_progress）
+    db.refresh(conv)
+    if conv.status != state_before_chat:
+        await _push_conversation_state(websocket, conv, state_before_chat)
+
+    # 3. 最终回复持久化 + 推送
+    reply = "".join(tokens)
+    if reply:
+        assistant_message = create_message(db, conv.id, "assistant", reply)
+        db.commit()
+        await _push_message_new(websocket, assistant_message)
 
 
 async def _handle_state_transition(

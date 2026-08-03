@@ -123,3 +123,36 @@ async def test_get_messages_other_customer_conversation_returns_404(db_client, d
 
     # 不能查看他人会话消息；用 404 而非 403 避免泄露会话存在性
     assert response.status_code == 404
+
+
+async def test_create_conversation_unauthenticated_returns_401(db_client):
+    """未认证 POST /conversations → 401（会话创建需客户身份）。"""
+    response = await db_client.post("/conversations")
+    assert response.status_code == 401
+
+
+async def test_create_conversation_returns_created(db_client, db):
+    """认证客户 POST /conversations → 201 + ConversationOut（status=authenticated）。
+
+    #24 UI-C-3 集成切片：对话页需要会话承载消息流（PRD › API 契约 /conversations 会话 CRUD）。
+    """
+    customer, token = await _login(db_client, db, phone="13900000016")
+
+    response = await db_client.post(
+        "/conversations",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["customer_id"] == customer.id
+    assert payload["status"] == "authenticated"
+    assert isinstance(payload["id"], int)
+    assert isinstance(payload["created_at"], str)
+
+    # 会话已持久化，列表可见（会话 CRUD）
+    listed = await db_client.get(
+        "/conversations",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert any(item["id"] == payload["id"] for item in listed.json())

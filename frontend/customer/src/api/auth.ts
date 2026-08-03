@@ -44,3 +44,35 @@ export async function login(phone: string, servicePassword: string): Promise<Log
 
   return (await response.json()) as LoginResponse
 }
+
+/** 办理执行复核响应（backend ReauthResponse：短期 execute_token）。 */
+export interface ReauthResponse {
+  execute_token: string
+  token_type: string
+}
+
+/**
+ * 办理执行复核（US-12）：再次校验服务密码 → 颁发短期 execute_token。
+ * 补偿控制（CONTEXT › 办理执行复核）：复核通过后才能凭 execute_token 触发办理执行。
+ * 失败抛 AuthError（后端 401「服务密码错误」→ 复核 Modal 错误文案）。
+ */
+export async function reauth(token: string, servicePassword: string): Promise<ReauthResponse> {
+  const response = await fetch('/api/auth/reauth', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ service_password: servicePassword }),
+  })
+
+  if (!response.ok) {
+    let message = '服务密码错误'
+    try {
+      const body = (await response.json()) as { detail?: unknown }
+      if (typeof body.detail === 'string') message = body.detail
+    } catch {
+      // 非 JSON 错误体：沿用默认文案
+    }
+    throw new AuthError(message)
+  }
+
+  return (await response.json()) as ReauthResponse
+}

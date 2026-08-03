@@ -92,8 +92,14 @@ class AssistantService:
         user_message: str,
         customer_id: int | None = None,
         callbacks: StreamingCallbacks | None = None,
+        db: Session | None = None,
+        audit_hook: Callable[[dict], None] | None = None,
     ) -> AsyncGenerator[str, None]:
         """发送用户消息 → LLM 流式生成（自动编排 tool 调用 + StreamingCallbacks）。
+
+        db / audit_hook：按调用（WS 路由等）注入的 tool 上下文依赖——业务 tool
+        经 ToolContext.db 访问数据库、经 audit_hook 留痕；缺省回退服务级字段
+        （self.db 不存在，仅 self.audit_hook）。保持服务对传输层与请求级会话无感知。
 
         行为（最多 MAX_TOOL_CYCLES 次 tool 调用，防止死循环）：
           1. 追加 user message
@@ -127,7 +133,8 @@ class AssistantService:
             ctx = ToolContext(
                 customer_id=customer_id,
                 conversation_id=conversation_id,
-                audit_hook=self.audit_hook,
+                audit_hook=audit_hook or self.audit_hook,
+                db=db,
             )
             result: ToolResult = self.tool_registry.execute_call(call, ctx)
             await _safe_cb(callbacks, "on_tool_end", result)
