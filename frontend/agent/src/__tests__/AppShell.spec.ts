@@ -5,6 +5,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent } from 'vue'
 
 import AppShell from '../components/AppShell.vue'
+import { useAuthStore } from '../stores/auth'
+import { useQueueStore } from '../stores/queue'
 
 /** 占位视图，仅用于测试路由切换与壳层渲染的可观察行为。 */
 const StubView = defineComponent({
@@ -16,6 +18,7 @@ function makeRouter(): Router {
   return createRouter({
     history: createMemoryHistory(),
     routes: [
+      { path: '/login', name: 'login', component: StubView },
       {
         path: '/',
         component: AppShell,
@@ -119,16 +122,33 @@ describe('AppShell — agent-status (US-30)', () => {
   })
 })
 
-describe('AppShell — queue-unread', () => {
-  it('「待接入」菜单项右侧显示未读计数 Error 徽章', async () => {
+describe('AppShell — queue-unread（issue #59 验收标准 1/3）', () => {
+  it('队列数据未加载（items 为空）时「待接入」不显示未读徽章', async () => {
     const { wrapper } = await mountShell('/queue')
 
     const items = wrapper.findAll('[data-testid="sidebar-menu-item"]')
-    const badge = items[0].find('[data-testid="sidebar-unread-badge"]')
+    expect(items[0].find('[data-testid="sidebar-unread-badge"]').exists()).toBe(false)
+  })
 
+  it('队列加载后徽章显示真实待接入数（与硬编码 3 无关）', async () => {
+    const { wrapper } = await mountShell('/queue')
+    const queue = useQueueStore()
+    queue.items = Array.from({ length: 5 }, (_, i) => ({
+      conversation_id: i + 1,
+      status: 'handed-off',
+      created_at: '2026-08-03T00:00:00Z',
+      customer_id: null,
+      customer_phone: '138****0001',
+      last_user_message: null,
+      reason: null,
+    }))
+    await flushPromises()
+
+    const items = wrapper.findAll('[data-testid="sidebar-menu-item"]')
+    const badge = items[0].find('[data-testid="sidebar-unread-badge"]')
     expect(badge.exists()).toBe(true)
     expect(badge.attributes('data-variant')).toBe('error')
-    expect(badge.text()).toBe('3')
+    expect(badge.text()).toBe('5')
   })
 
   it('其余菜单项不显示未读徽章', async () => {
@@ -138,6 +158,36 @@ describe('AppShell — queue-unread', () => {
     for (const item of items.slice(1)) {
       expect(item.find('[data-testid="sidebar-unread-badge"]').exists()).toBe(false)
     }
+  })
+})
+
+describe('AppShell — agent-identity（issue #59 验收标准 2）', () => {
+  it('顶栏显示登录坐席真实工号（auth store employeeId），非写死「工号 1001」', async () => {
+    const { wrapper } = await mountShell('/queue')
+    const auth = useAuthStore()
+    auth.setAuthenticated({ accessToken: 'access-t', refreshToken: 'refresh-t' }, 'A1001')
+    await flushPromises()
+
+    const identity = wrapper.find('[data-testid="agent-identity-name"]')
+    expect(identity.exists()).toBe(true)
+    expect(identity.text()).toBe('工号 A1001')
+  })
+})
+
+describe('AppShell — logout（issue #60 验收标准 2）', () => {
+  it('点击「登出」清除凭证并跳转 /login', async () => {
+    const { wrapper, router } = await mountShell('/queue')
+    const auth = useAuthStore()
+    auth.setAuthenticated({ accessToken: 'access-t', refreshToken: 'refresh-t' }, 'A1001')
+    await flushPromises()
+
+    await wrapper.find('[data-testid="agent-logout-btn"]').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/login')
+    expect(auth.isAuthenticated).toBe(false)
+    expect(auth.accessToken).toBe('')
+    expect(localStorage.getItem('agent.auth')).toBeNull()
   })
 })
 

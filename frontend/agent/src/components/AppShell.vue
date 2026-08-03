@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { RouterView, RouterLink } from 'vue-router'
+import { RouterView, RouterLink, useRouter } from 'vue-router'
 
 import { useAgentStore, agentStatusLabels, type AgentStatus } from '../stores/agent'
+import { useAuthStore } from '../stores/auth'
+import { useQueueStore } from '../stores/queue'
 
 const agent = useAgentStore()
+const auth = useAuthStore()
+const queue = useQueueStore()
+const router = useRouter()
 
 interface MenuItem {
   to: string
@@ -33,6 +38,12 @@ function selectStatus(status: AgentStatus) {
 
 /** 全局搜索：聚焦展开 240→320px + 下拉面板（PRD 状态策略「搜索展开」行）。 */
 const searchFocused = ref(false)
+
+/** 登出（US-19，issue #60）：清除本地凭证后跳转登录页；受保护路由由 #58 守卫拦截。 */
+function logout() {
+  auth.logout()
+  router.replace('/login')
+}
 </script>
 
 <template>
@@ -94,10 +105,14 @@ const searchFocused = ref(false)
 
         <div class="agent-identity">
           <span class="agent-identity__avatar" aria-hidden="true" />
-          <span class="agent-identity__name">工号 1001</span>
+          <span data-testid="agent-identity-name" class="agent-identity__name">
+            工号 {{ auth.employeeId }}
+          </span>
         </div>
 
-        <button data-testid="agent-logout-btn" class="agent-logout" type="button">登出</button>
+        <button data-testid="agent-logout-btn" class="agent-logout" type="button" @click="logout">
+          登出
+        </button>
       </div>
     </header>
 
@@ -113,12 +128,12 @@ const searchFocused = ref(false)
         >
           <span class="sidebar-menu-item__label">{{ item.label }}</span>
           <span
-            v-if="item.menu === 'queue' && agent.queueUnread > 0"
+            v-if="item.menu === 'queue' && queue.count > 0"
             data-testid="sidebar-unread-badge"
             data-variant="error"
             class="sidebar-unread-badge"
           >
-            {{ agent.queueUnread }}
+            {{ queue.count }}
           </span>
         </RouterLink>
       </nav>

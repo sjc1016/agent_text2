@@ -94,10 +94,10 @@ export const useAuthStore = defineStore('auth', {
     },
 
     /**
-     * 清除坐席凭证（凭证失效 401 时由守卫监听调用；登出功能 #60 亦可复用）：
-     * 回未登录态并清理 localStorage。
+     * 登出（US-19）：清除坐席凭证回未登录态并清理 localStorage。
+     * 顶栏「登出」按钮（#60）与凭证失效 401 引导（#58 守卫监听）共用此 action。
      */
-    clearAuth() {
+    logout() {
       this.accessToken = ''
       this.refreshToken = ''
       this.employeeId = ''

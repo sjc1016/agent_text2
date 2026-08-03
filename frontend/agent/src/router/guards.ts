@@ -69,7 +69,7 @@ export function setupAuthGuard(router: Router): void {
  */
 export function setupAuthExpiredListener(router: Router): void {
   window.addEventListener(AUTH_EXPIRED_EVENT, () => {
-    useAuthStore().clearAuth()
+    useAuthStore().logout()
     router.replace(buildLoginRedirect(router.currentRoute.value.fullPath))
   })
 }
