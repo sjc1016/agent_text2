@@ -25,6 +25,8 @@ from app.models import Conversation, Notification, Ticket, User
 from app.ws.events import (
     AgentStatusPayload,
     ConversationStatePayload,
+    HandoffEndPayload,
+    HandoffStartPayload,
     NotificationPushPayload,
     ReauthRequiredPayload,
     SecondConfirmPayload,
@@ -200,3 +202,42 @@ async def push_conversation_state(conversation: Conversation, old_state: str) ->
         changed_at=datetime.now(timezone.utc),
     ).model_dump(mode="json")
     await hub.push_to_customer(conversation.customer_id, WsEventName.CONVERSATION_STATE, payload)
+
+
+async def push_handoff_start(
+    conversation: Conversation,
+    reason: str,
+    offline_fallback: bool,
+    ticket_id: int | None = None,
+) -> None:
+    """推送 handoff.start（转接开始，PRD line 282；CONTEXT › 转接）。
+
+    助理触发 Handoff 后调用；offline_fallback=True 表示离线兜底（回呼请求
+    Ticket 已创建并派单，ticket_id 非空）。会话进入待接入队列由 conversation.state
+    （handed_off）表达，本事件标记转接原因与兜底信息。
+    """
+    if conversation.customer_id is None:
+        return
+    payload = HandoffStartPayload(
+        conversation_id=conversation.id,
+        reason=reason,
+        offline_fallback=offline_fallback,
+        ticket_id=ticket_id,
+        changed_at=datetime.now(timezone.utc),
+    ).model_dump(mode="json")
+    await hub.push_to_customer(conversation.customer_id, WsEventName.HANDOFF_START, payload)
+
+
+async def push_handoff_end(conversation: Conversation) -> None:
+    """推送 handoff.end（转接结束，PRD line 282；CONTEXT › 转接）。
+
+    坐席转回助理（transfer_back，US-26）后调用，标记 Handoff 周期结束；
+    会话恢复（handed_off → authenticated）由 conversation.state 表达。
+    """
+    if conversation.customer_id is None:
+        return
+    payload = HandoffEndPayload(
+        conversation_id=conversation.id,
+        changed_at=datetime.now(timezone.utc),
+    ).model_dump(mode="json")
+    await hub.push_to_customer(conversation.customer_id, WsEventName.HANDOFF_END, payload)

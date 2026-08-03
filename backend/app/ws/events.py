@@ -15,6 +15,7 @@ F0 循环5（issue #2 / PRD 第282行）：
     避免跨语言映射层）。
 
 B2 循环5（issue #7 验收3）：补全 message.new / system.message 的 payload 模型。
+B8（issue #17 验收1/6）：补全 handoff.start / handoff.end 的 payload 模型。
 """
 
 from datetime import datetime
@@ -80,6 +81,35 @@ class ConversationStatePayload(BaseModel):
     conversation_id: int
     old_state: str
     new_state: str
+    changed_at: datetime
+
+
+class HandoffStartPayload(BaseModel):
+    """handoff.start 事件 payload（转接开始，PRD line 282；CONTEXT › 转接）。
+
+    助理触发 Handoff 时推送；reason 为 6 类触发原因（HandoffReason 枚举值：
+    out_of_scope / transaction_failure / explicit_request / negative_sentiment /
+    intent_loop / compliance_risk）。
+    offline_fallback=True 表示离线兜底（CONTEXT › 离线兜底：已创建回呼请求
+    Ticket 派单到 Skill Group，ticket_id 非空）；会话仍进入待接入队列，
+    次日服务时间坐席接入。
+    """
+
+    conversation_id: int
+    reason: str
+    offline_fallback: bool
+    ticket_id: int | None
+    changed_at: datetime
+
+
+class HandoffEndPayload(BaseModel):
+    """handoff.end 事件 payload（转接结束，PRD line 282；CONTEXT › 转接）。
+
+    坐席转回助理（transfer_back，US-26）时推送，标记 Handoff 周期结束；
+    会话恢复（handed_off → authenticated）由 conversation.state 表达。
+    """
+
+    conversation_id: int
     changed_at: datetime
 
 

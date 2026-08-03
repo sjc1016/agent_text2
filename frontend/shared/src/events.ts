@@ -44,8 +44,8 @@ export type WsEventName = (typeof WS_EVENT_NAMES)[number]
  *
  * TODO（后续切片）：
  *   - conversation 切片：细化 'llm.token'
- *   - agent 切片：细化 'handoff.start' | 'handoff.end'（'agent.status' 已由 B9 细化）
  *   - transaction 切片（B6）：'second.confirm' | 'reauth.required' 已细化（见下）
+ *   - 'handoff.start' | 'handoff.end' 已由 B8（issue #17）细化（见下）
  */
 
 /** 会话状态机全部合法状态名（PRD line 286）。 */
@@ -72,6 +72,21 @@ export interface ConversationStatePayload {
   conversation_id: number
   old_state: ConversationState
   new_state: ConversationState
+  changed_at: string // ISO 字符串
+}
+
+/** handoff.start payload：助理触发 Handoff（CONTEXT › 转接；B8 镜像后端 HandoffStartPayload）。 */
+export interface HandoffStartPayload {
+  conversation_id: number
+  reason: string // 6 类触发原因（out_of_scope / transaction_failure / explicit_request / negative_sentiment / intent_loop / compliance_risk）
+  offline_fallback: boolean // 离线兜底（已创建回呼请求 Ticket 派单到 Skill Group）
+  ticket_id: number | null // 回呼请求 Ticket ID（offline_fallback 时非空）
+  changed_at: string // ISO 字符串
+}
+
+/** handoff.end payload：坐席转回助理，Handoff 周期结束（B8 镜像后端 HandoffEndPayload）。 */
+export interface HandoffEndPayload {
+  conversation_id: number
   changed_at: string // ISO 字符串
 }
 
@@ -133,8 +148,8 @@ export interface ReauthRequiredPayload {
 export interface WsEventPayloadMap {
   'llm.token': Record<string, unknown>
   'message.new': MessageNewPayload
-  'handoff.start': Record<string, unknown>
-  'handoff.end': Record<string, unknown>
+  'handoff.start': HandoffStartPayload
+  'handoff.end': HandoffEndPayload
   'ticket.update': TicketUpdatePayload
   'notification.push': NotificationPushPayload
   'system.message': SystemMessagePayload
