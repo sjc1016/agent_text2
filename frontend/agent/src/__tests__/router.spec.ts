@@ -1,10 +1,15 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import ElementPlus from 'element-plus'
 
 import { routes } from '../router'
+
+// QueueView onMounted 触发队列拉取（#20），此处 mock 避免真实 fetch。
+vi.mock('../api/agents', () => ({
+  listQueueItems: vi.fn().mockResolvedValue([]),
+}))
 
 async function mountRoute(path: string) {
   setActivePinia(createPinia())
