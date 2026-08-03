@@ -98,6 +98,9 @@ def trigger_handoff(
 
     if conversation.status != "handed_off":
         transition_conversation_state(db, conversation, "handed_off")
+    # 转接原因持久化到会话（B11，issue #42：队列「转接原因」展示来源，
+    # 正常转接与离线兜底两条路径均写入）
+    conversation.handoff_reason = reason_enum.value
     db.commit()
     db.refresh(conversation)
     if ticket is not None:

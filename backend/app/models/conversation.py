@@ -50,6 +50,7 @@ class Conversation(Base):
     customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"), nullable=True)
     agent_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False, server_default="unauthenticated")
+    handoff_reason: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 

@@ -44,3 +44,16 @@ class QueueItemOut(BaseModel):
     customer_id: int | None
     customer_phone: str | None  # 脱敏（138****0001）
     last_user_message: str | None  # 会话起因摘要（最后一条用户消息）
+    reason: str | None  # 转接原因（Conversation.handoff_reason，PRD queue 页 Caption）
+
+
+class CallbackItemOut(BaseModel):
+    """回呼请求工单项：离线兜底创建的 [回呼请求] Ticket（US-29，PRD queue 页回呼分组）。"""
+
+    ticket_id: int
+    conversation_id: int
+    customer_id: int | None
+    customer_phone: str | None  # 脱敏（138****0001）
+    content: str  # 含 [回呼请求] 前缀（B8 离线兜底内容模板）
+    skill_group: str | None  # 派单技能组（套餐业务组/故障报修组/投诉处理组）
+    created_at: datetime
