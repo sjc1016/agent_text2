@@ -1,9 +1,11 @@
 import { defineStore } from 'pinia'
 
 import {
+  cancelTicket,
   closeTicket,
   createAgentTicket,
   dispatchTicket,
+  dispatchTicketToGroup,
   executeTicket,
   listAgentTickets,
   type AgentTicket,
@@ -85,9 +87,21 @@ export const useTicketsStore = defineStore('tickets', {
       this.replaceTicket(updated)
     },
 
+    /** 派单到技能组（详情页操作区 US-24）：待派单 → 已派单 + 记录技能组。 */
+    async dispatchToGroup(ticketId: number, skillGroup: string, token: string): Promise<void> {
+      const updated = await dispatchTicketToGroup(ticketId, skillGroup, token)
+      this.replaceTicket(updated)
+    },
+
     /** 关闭（US-24）：待确认 → 已关闭。 */
     async close(ticketId: number, token: string): Promise<void> {
       const updated = await closeTicket(ticketId, token)
+      this.replaceTicket(updated)
+    },
+
+    /** 取消工单（详情页操作区 US-24）：非终态 → 已取消。 */
+    async cancel(ticketId: number, token: string): Promise<void> {
+      const updated = await cancelTicket(ticketId, token)
       this.replaceTicket(updated)
     },
 
