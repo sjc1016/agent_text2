@@ -240,6 +240,18 @@ def trigger_execution_reauth(db: Session, customer: Customer, ticket: Ticket) ->
     return ticket
 
 
+def assert_executable_transaction(ticket: Ticket) -> None:
+    """执行前置校验：办理类 + pending（execute_transaction 与坐席引导执行共享）。
+
+    B12（issue #44 AC4）：坐席引导复核执行前先做可行性校验（422），
+    再进入服务密码复核（401）——校验单点化，避免两条执行入口漂移。
+    """
+    if _enum_value(ticket.ticket_type) != "transaction":
+        raise ValueError("仅办理类工单可执行")
+    if _enum_value(ticket.status) != "pending":
+        raise ValueError(f"工单状态 {_enum_value(ticket.status)!r} 不可执行（需 pending）")
+
+
 def execute_transaction(db: Session, ticket: Ticket) -> Ticket:
     """执行办理（US-12）：复核通过后 pending → processing → 执行 → effective。
 
@@ -251,10 +263,7 @@ def execute_transaction(db: Session, ticket: Ticket) -> Ticket:
         ValueError: 工单类型/状态不满足（路由层转 422）
     调用方负责 commit 与 WS 推送（ticket.update + notification.push）。
     """
-    if _enum_value(ticket.ticket_type) != "transaction":
-        raise ValueError("仅办理类工单可执行")
-    if _enum_value(ticket.status) != "pending":
-        raise ValueError(f"工单状态 {_enum_value(ticket.status)!r} 不可执行（需 pending）")
+    assert_executable_transaction(ticket)
 
     transition_ticket_status(db, ticket, "processing")
     _apply_effect(db, ticket)
