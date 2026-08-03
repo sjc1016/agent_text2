@@ -241,6 +241,54 @@
         ]
       }
     },
+    "/agents/conversations/{conversation_id}": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Get Conversation View",
+        "description": "坐席读单会话视图（US-21）：会话状态 + 脱敏号码 + 转接原因。\n\nB14（issue #55 AC4）：active-chat 页会话上下文数据源；可见性规则复用\n消息历史（仅 handed_off 转接中的会话对坐席可见，否则 404，不泄露会话存在性）。",
+        "operationId": "get_conversation_view_agents_conversations__conversation_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationViewOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agents/conversations/{conversation_id}/messages": {
       "get": {
         "tags": [
@@ -346,6 +394,35 @@
       }
     },
     "/agents/tickets": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "List All Tickets Endpoint",
+        "description": "坐席全局工单列表（US-27，工单管理页数据源）。\n\nB14（issue #55 AC1）：跨会话汇总全部工单，created_at 倒序（同时间按 id 倒序）；\n号码经 mask_phone 脱敏（138****0001）。当前工单管理页（#22）mock 数据源替换。",
+        "operationId": "list_all_tickets_endpoint_agents_tickets_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AgentTicketOut"
+                  },
+                  "type": "array",
+                  "title": "Response List All Tickets Endpoint Agents Tickets Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
       "post": {
         "tags": [
           "agents"
@@ -446,7 +523,7 @@
           "agents"
         ],
         "summary": "Execute Agent Transaction",
-        "description": "坐席引导服务密码复核并单步执行办理工单（US-25，B12 issue #44 AC4）。\n\nactive-chat 右栏待执行办理工单「执行」按钮触发服务密码复核 Modal，坐席引导\n用户再次输入服务密码；校验通过 → Processing → Effective，写审计并推送\nticket.update / notification.push（客户侧同收）。密码失败 → 401 状态不变。",
+        "description": "坐席引导服务密码复核并单步执行办理工单（US-25，B12 issue #44 AC4）。\n\nactive-chat 右栏待执行办理工单「执行」按钮触发服务密码复核 Modal，坐席引导\n用户再次输入服务密码；校验通过 → Processing → Effective，写审计并推送\nticket.update / notification.push（客户侧同收）。密码失败 → 401 状态不变。\n返回 AgentTicketOut（坐席视角统一 schema，含脱敏号码与技能组，B14 #55）。",
         "operationId": "execute_agent_transaction_agents_transactions__ticket_id__execute_post",
         "security": [
           {
@@ -480,7 +557,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TicketOut"
+                  "$ref": "#/components/schemas/AgentTicketOut"
                 }
               }
             }
@@ -527,6 +604,214 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/agents/tickets/{ticket_id}": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Get Ticket Detail",
+        "description": "坐席读工单详情（US-28，工单详情页数据源）。\n\nB14（issue #55 AC3）：基本信息 + 脱敏号码 + 技能组 + 创建者；不存在 → 404。",
+        "operationId": "get_ticket_detail_agents_tickets__ticket_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "ticket_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Ticket Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTicketOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/tickets/{ticket_id}/dispatch": {
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Dispatch Ticket",
+        "description": "坐席派单（US-24）：工单类 pending → dispatched（可选技能组，触发通知）。\n\nB14（issue #55 AC2）：工单管理列表行内「派单」/ 详情页「派单到技能组」共用。\nskill_group 为可选 query 参数（无技能组时仅流转状态）。",
+        "operationId": "dispatch_ticket_agents_tickets__ticket_id__dispatch_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "ticket_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Ticket Id"
+            }
+          },
+          {
+            "name": "skill_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Skill Group"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTicketOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/tickets/{ticket_id}/close": {
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Close Ticket",
+        "description": "坐席关闭（US-24）：工单类 awaiting_confirmation → closed（触发通知）。",
+        "operationId": "close_ticket_agents_tickets__ticket_id__close_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "ticket_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Ticket Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTicketOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/tickets/{ticket_id}/cancel": {
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Cancel Ticket",
+        "description": "坐席取消（US-24）：非终态 → cancelled（不触发通知）。",
+        "operationId": "cancel_ticket_agents_tickets__ticket_id__cancel_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "ticket_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Ticket Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTicketOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/conversations": {
@@ -1686,6 +1971,123 @@
         ],
         "title": "AgentStatusUpdate"
       },
+      "AgentTicketOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "conversation_id": {
+            "type": "integer",
+            "title": "Conversation Id"
+          },
+          "ticket_type": {
+            "type": "string",
+            "title": "Ticket Type"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "skill_group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Group"
+          },
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Id"
+          },
+          "customer_phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Phone"
+          },
+          "contact_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Name"
+          },
+          "contact_phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Phone"
+          },
+          "creator_type": {
+            "type": "string",
+            "title": "Creator Type"
+          },
+          "creator_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creator Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "conversation_id",
+          "ticket_type",
+          "status",
+          "content",
+          "skill_group",
+          "customer_id",
+          "customer_phone",
+          "contact_name",
+          "contact_phone",
+          "creator_type",
+          "creator_id",
+          "created_at"
+        ],
+        "title": "AgentTicketOut",
+        "description": "坐席视角工单（列表/详情项，US-27/28）：TicketOut 字段 + 脱敏号码 + 技能组。\n\ncustomer_phone 经 mask_phone 脱敏（138****0001）；skill_group 记录派单目标技能组。"
+      },
       "BusinessHallOut": {
         "properties": {
           "id": {
@@ -1886,6 +2288,67 @@
         ],
         "title": "ConversationOut",
         "description": "会话列表项。"
+      },
+      "ConversationViewOut": {
+        "properties": {
+          "conversation_id": {
+            "type": "integer",
+            "title": "Conversation Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Id"
+          },
+          "customer_phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Phone"
+          },
+          "handoff_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handoff Reason"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversation_id",
+          "status",
+          "customer_id",
+          "customer_phone",
+          "handoff_reason",
+          "created_at"
+        ],
+        "title": "ConversationViewOut",
+        "description": "坐席视角单会话视图（US-21，active-chat 页会话上下文）。\n\n仅 handed_off 转接中的会话可见（复用消息历史可见性规则，否则 404）；\ncustomer_phone 经 mask_phone 脱敏（138****0001）；handoff_reason 为\n转接原因（explicit_request / out_of_scope 等，PRD queue 页 Caption 同源）。"
       },
       "CoverageAreaOut": {
         "properties": {

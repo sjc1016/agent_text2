@@ -5,7 +5,8 @@
  * 继承 agent-console app-shell，侧栏选中「工单管理」（路由 /tickets，壳层定义）。
  * 内容区（PRD）：顶部筛选栏（类型/状态/技能组 Select + 搜索 + 重置）+ 工单列表
  * （ID + 主文案 + 关联客户 + 创建时间 + 状态徽章 + 行内操作按钮组按状态显示）。
- * 数据源：tickets store（api/tickets.ts mock 先行，坐席视角端点见 #44/#45）。
+ * 数据源：tickets store（api/tickets.ts 真契约，B14 #55：GET/POST /agents/tickets*）。
+ * 建单入口在 active-chat（PRD §active-chat 创建工单 Modal，会话内建单）；本页不含建单。
  */
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -104,40 +105,6 @@ async function submitReauth() {
   }
 }
 
-/** 创建工单 Modal（US-23）：工单类型 Select + 内容 textarea + 主按钮「创建」。 */
-const showCreateModal = ref(false)
-const newTicketType = ref<'transaction' | 'ticketing'>('ticketing')
-const newTicketContent = ref('')
-const creating = ref(false)
-const createError = ref('')
-
-function openCreateModal() {
-  showCreateModal.value = true
-  newTicketType.value = 'ticketing'
-  newTicketContent.value = ''
-  createError.value = ''
-}
-
-function closeCreateModal() {
-  if (creating.value) return
-  showCreateModal.value = false
-}
-
-async function submitCreateTicket() {
-  const content = newTicketContent.value.trim()
-  if (!content || creating.value) return
-  creating.value = true
-  createError.value = ''
-  try {
-    await store.create({ ticket_type: newTicketType.value, content }, auth.accessToken)
-    showCreateModal.value = false
-  } catch (err) {
-    createError.value = err instanceof Error ? err.message : '创建工单失败，请重试'
-  } finally {
-    creating.value = false
-  }
-}
-
 /** 工单类型图标（办理类 Finished / 工单类 Tickets，PRD §tickets 列表段）。 */
 function typeIcon(t: AgentTicket): unknown {
   return t.ticket_type === 'transaction' ? Finished : Tickets
@@ -208,14 +175,6 @@ function viewDetail(t: AgentTicket) {
         @click="store.resetFilters"
       >
         重置
-      </button>
-      <button
-        data-testid="create-ticket-btn"
-        class="btn btn--outline btn--sm"
-        type="button"
-        @click="openCreateModal"
-      >
-        创建工单
       </button>
     </div>
 
@@ -393,67 +352,6 @@ function viewDetail(t: AgentTicket) {
             @click="submitReauth"
           >
             {{ reauthing ? '执行中…' : '确认执行' }}
-          </button>
-        </footer>
-      </div>
-    </div>
-
-    <!-- 创建工单 Modal（US-23，同 active-chat 规格：工单类型 Select + 内容 textarea + 主按钮「创建」） -->
-    <div v-if="showCreateModal" data-testid="create-ticket-modal" class="modal-overlay">
-      <div class="modal" role="dialog" aria-modal="true" aria-label="创建工单">
-        <header class="modal__header">
-          <h3 class="modal__title">创建工单</h3>
-          <button
-            type="button"
-            class="modal__close"
-            data-testid="create-ticket-close"
-            aria-label="关闭"
-            @click="closeCreateModal"
-          >
-            <el-icon :size="16"><Close /></el-icon>
-          </button>
-        </header>
-
-        <div class="modal__body">
-          <label class="modal-field">
-            <span class="modal-field__label">工单类型</span>
-            <select v-model="newTicketType" data-testid="ticket-type-select" class="modal-input">
-              <option value="transaction">办理类</option>
-              <option value="ticketing">工单类</option>
-            </select>
-          </label>
-          <label class="modal-field">
-            <span class="modal-field__label">内容</span>
-            <textarea
-              v-model="newTicketContent"
-              data-testid="ticket-content"
-              class="modal-input modal-input--textarea"
-              rows="3"
-              placeholder="请输入工单内容"
-            />
-          </label>
-          <p v-if="createError" data-testid="create-ticket-error" class="modal-error">
-            {{ createError }}
-          </p>
-        </div>
-
-        <footer class="modal__footer">
-          <button
-            type="button"
-            class="btn btn--outline"
-            data-testid="create-ticket-cancel"
-            @click="closeCreateModal"
-          >
-            取消
-          </button>
-          <button
-            type="button"
-            class="btn btn--primary btn--lg"
-            data-testid="create-ticket-submit"
-            :disabled="!newTicketContent.trim() || creating"
-            @click="submitCreateTicket"
-          >
-            {{ creating ? '创建中…' : '创建' }}
           </button>
         </footer>
       </div>

@@ -4,7 +4,7 @@
  *
  * 继承 agent-console app-shell，侧栏选中「进行中」（路由 /active-chat）。
  * 规格：PRD 页面清单 §active-chat「UI 设计描述」+ 变体段；DESIGN.md §5 气泡/按钮/状态徽章/骨架屏。
- * 数据缺口：坐席视角 REST 端点缺失 → api mock 驱动（backend issue #45）；
+ * 数据源：REST 真契约（B12 #44 / B14 #55，见 api/activeChat.ts 契约清单）；
  * 坐席 WS（take_over/message/state_transition）走后端 B9 真契约。
  */
 import { computed, onMounted, onUnmounted, ref } from 'vue'
@@ -186,7 +186,23 @@ async function loadData() {
     messages.value = await listAgentMessages(id, auth.accessToken)
     profileLoading.value = true
     try {
-      profile.value = await fetchAgentCustomerProfile(id, auth.accessToken)
+      // 访客会话（无 Customer）无客户资料端点：本地构造访客卡（联系方式自会话头）；
+      // 认证客户 → GET /agents/customers/{customer_id}（B12 AC2）。
+      const customerId = conversation.value.customer_id
+      profile.value =
+        customerId === null
+          ? {
+              customer_id: null,
+              phone: conversation.value.customer_phone,
+              name: null,
+              authenticated: false,
+              contact_name: null,
+              contact_phone: null,
+              account_balance: null,
+              plan_name: null,
+              contract_expiry: null,
+            }
+          : await fetchAgentCustomerProfile(customerId, auth.accessToken)
     } finally {
       profileLoading.value = false
     }

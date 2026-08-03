@@ -3,24 +3,23 @@ import { defineStore } from 'pinia'
 import {
   cancelTicket,
   closeTicket,
-  createAgentTicket,
   dispatchTicket,
   dispatchTicketToGroup,
   executeTicket,
   listAgentTickets,
   type AgentTicket,
-  type CreateTicketInput,
 } from '../api/tickets'
 
 /**
  * 坐席工单 store（#22 UI-A-5）：承载「工单管理」页数据源与交互态。
  *
  * 职责边界：
- *   - tickets：坐席工单列表（US-27，数据源 api/tickets.ts，mock 先行见 #44/#45）。
+ *   - tickets：坐席工单列表（US-27，数据源 api/tickets.ts 真契约，B14 #55）。
  *   - loading：列表加载态（States 矩阵 loading → 骨架屏）。
  *   - filters：筛选条件（类型/状态/技能组/关键词，PRD 筛选栏），客户端过滤 filtered。
  *   - selectedId：选中行（States 矩阵 row-selected → 色条 + 背景）。
- *   - 行内操作（US-24/25）：dispatch / close / execute / create，成功后原地更新列表。
+ *   - 行内操作（US-24/25）：dispatch / close / execute，成功后原地更新列表。
+ *   - 建单（US-23）在 active-chat 会话内完成，本页不承载。
  */
 export const useTicketsStore = defineStore('tickets', {
   state: () => ({
@@ -109,12 +108,6 @@ export const useTicketsStore = defineStore('tickets', {
     async execute(ticketId: number, servicePassword: string, token: string): Promise<void> {
       const updated = await executeTicket(ticketId, servicePassword, token)
       this.replaceTicket(updated)
-    },
-
-    /** 创建工单（US-23）：成功后追加列表头部。 */
-    async create(input: CreateTicketInput, token: string): Promise<void> {
-      const created = await createAgentTicket(input, token)
-      this.tickets = [created, ...this.tickets]
     },
 
     /** 行内操作成功后原地替换工单（保持排序与选中态）。 */

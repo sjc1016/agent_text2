@@ -21,7 +21,9 @@ from app.agents.schemas import (
     AgentLoginRequest,
     AgentPublic,
     AgentStatusUpdate,
+    AgentTicketOut,
     CallbackItemOut,
+    ConversationViewOut,
     QueueItemOut,
 )
 from app.agents.service import (
@@ -29,6 +31,7 @@ from app.agents.service import (
     execute_ticket_after_agent_reauth,
     get_agent_conversation_or_none,
     get_customer_profile,
+    list_all_tickets,
     list_callback_tickets,
     list_pending_queue_entries,
     mask_phone,
@@ -43,13 +46,14 @@ from app.auth.security import create_agent_access_token, create_agent_refresh_to
 from app.conversation.schemas import MessageOut
 from app.conversation.service import list_messages_for_conversation
 from app.db import get_db
-from app.models import Message, Ticket, User
+from app.models import Customer, Message, Notification, Ticket, User
 from app.ticket.schemas import TicketCreate, TicketOut
 from app.ticket.service import (
     create_notification,
     create_ticket,
     notification_message,
     should_push_notification,
+    transition_ticket_status,
 )
 from app.ws.hub import push_agent_status, push_notification, push_ticket_update
 
@@ -128,6 +132,35 @@ def list_pending_queues(db: DbSession, current: CurrentAgent) -> list[QueueItemO
         )
         for entry in list_pending_queue_entries(db)
     ]
+
+
+@router.get("/conversations/{conversation_id}", response_model=ConversationViewOut)
+def get_conversation_view(
+    conversation_id: int, db: DbSession, current: CurrentAgent
+) -> ConversationViewOut:
+    """坐席读单会话视图（US-21）：会话状态 + 脱敏号码 + 转接原因。
+
+    B14（issue #55 AC4）：active-chat 页会话上下文数据源；可见性规则复用
+    消息历史（仅 handed_off 转接中的会话对坐席可见，否则 404，不泄露会话存在性）。
+    """
+    conv = get_agent_conversation_or_none(db, conversation_id)
+    if conv is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="会话不存在")
+
+    customer_phone = None
+    if conv.customer_id is not None:
+        customer = db.get(Customer, conv.customer_id)
+        if customer is not None:
+            customer_phone = mask_phone(customer.phone)
+
+    return ConversationViewOut(
+        conversation_id=conv.id,
+        status=conv.status,
+        customer_id=conv.customer_id,
+        customer_phone=customer_phone,
+        handoff_reason=conv.handoff_reason,
+        created_at=conv.created_at,
+    )
 
 
 @router.get("/conversations/{conversation_id}/messages", response_model=list[MessageOut])
@@ -223,15 +256,16 @@ def customer_profile(
     )
 
 
-@router.post("/transactions/{ticket_id}/execute", response_model=TicketOut)
+@router.post("/transactions/{ticket_id}/execute", response_model=AgentTicketOut)
 async def execute_agent_transaction(
     ticket_id: int, payload: AgentExecuteRequest, db: DbSession, current: CurrentAgent
-) -> Ticket:
+) -> AgentTicketOut:
     """坐席引导服务密码复核并单步执行办理工单（US-25，B12 issue #44 AC4）。
 
     active-chat 右栏待执行办理工单「执行」按钮触发服务密码复核 Modal，坐席引导
     用户再次输入服务密码；校验通过 → Processing → Effective，写审计并推送
     ticket.update / notification.push（客户侧同收）。密码失败 → 401 状态不变。
+    返回 AgentTicketOut（坐席视角统一 schema，含脱敏号码与技能组，B14 #55）。
     """
     ticket = db.get(Ticket, ticket_id)
     if ticket is None:
@@ -269,7 +303,7 @@ async def execute_agent_transaction(
     await push_ticket_update(ticket, old_status)
     if notification is not None:
         await push_notification(notification)
-    return ticket
+    return _agent_ticket_out(db, ticket)
 
 
 @router.get("/callbacks", response_model=list[CallbackItemOut])
@@ -291,3 +325,141 @@ def list_callbacks(db: DbSession, current: CurrentAgent) -> list[CallbackItemOut
         )
         for entry in list_callback_tickets(db)
     ]
+
+
+def _agent_ticket_out(db: Session, ticket: Ticket) -> AgentTicketOut:
+    """Ticket → 坐席视角工单（号码经 mask_phone 脱敏，138****0001）。"""
+    customer_phone = None
+    if ticket.customer_id is not None:
+        customer = db.get(Customer, ticket.customer_id)
+        if customer is not None:
+            customer_phone = mask_phone(customer.phone)
+    return AgentTicketOut(
+        id=ticket.id,
+        conversation_id=ticket.conversation_id,
+        ticket_type=ticket.ticket_type.value,
+        status=ticket.status.value,
+        content=ticket.content,
+        skill_group=ticket.skill_group,
+        customer_id=ticket.customer_id,
+        customer_phone=customer_phone,
+        contact_name=ticket.contact_name,
+        contact_phone=ticket.contact_phone,
+        creator_type=ticket.creator_type,
+        creator_id=ticket.creator_id,
+        created_at=ticket.created_at,
+    )
+
+
+def _get_agent_ticket_or_404(db: Session, ticket_id: int) -> Ticket:
+    ticket = db.get(Ticket, ticket_id)
+    if ticket is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="工单不存在")
+    return ticket
+
+
+async def _transition_agent_ticket(
+    db: Session,
+    ticket: Ticket,
+    new_status: str,
+    current: User,
+    *,
+    skill_group: str | None = None,
+) -> Ticket:
+    """坐席工单状态流转：校验 → 可选技能组 → 通知 → 提交 → WS 推送 → 审计。
+
+    dispatch/close/cancel 共用（US-24）；非法转换抛 ValueError → 422 状态不变。
+    """
+    old_status = ticket.status.value
+    try:
+        transition_ticket_status(db, ticket, new_status)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"状态流转失败：{exc}",
+        ) from exc
+    if skill_group is not None:
+        ticket.skill_group = skill_group
+
+    notification: Notification | None = None
+    if should_push_notification(ticket, ticket.status.value):
+        notification = create_notification(
+            db, ticket, notification_message(ticket, ticket.status.value)
+        )
+
+    db.commit()
+    db.refresh(ticket)
+    if notification is not None:
+        db.refresh(notification)
+    write_audit_log(
+        db,
+        actor_type="agent",
+        actor_id=current.id,
+        action="agent.ticket.status.update",
+        detail={"ticket_id": ticket.id, "new_status": ticket.status.value},
+    )
+    await push_ticket_update(ticket, old_status)
+    if notification is not None:
+        await push_notification(notification)
+    return ticket
+
+
+@router.get("/tickets", response_model=list[AgentTicketOut])
+def list_all_tickets_endpoint(db: DbSession, current: CurrentAgent) -> list[AgentTicketOut]:
+    """坐席全局工单列表（US-27，工单管理页数据源）。
+
+    B14（issue #55 AC1）：跨会话汇总全部工单，created_at 倒序（同时间按 id 倒序）；
+    号码经 mask_phone 脱敏（138****0001）。当前工单管理页（#22）mock 数据源替换。
+    """
+    return [_agent_ticket_out(db, entry.ticket) for entry in list_all_tickets(db)]
+
+
+@router.get("/tickets/{ticket_id}", response_model=AgentTicketOut)
+def get_ticket_detail(
+    ticket_id: int, db: DbSession, current: CurrentAgent
+) -> AgentTicketOut:
+    """坐席读工单详情（US-28，工单详情页数据源）。
+
+    B14（issue #55 AC3）：基本信息 + 脱敏号码 + 技能组 + 创建者；不存在 → 404。
+    """
+    ticket = _get_agent_ticket_or_404(db, ticket_id)
+    return _agent_ticket_out(db, ticket)
+
+
+@router.post("/tickets/{ticket_id}/dispatch", response_model=AgentTicketOut)
+async def dispatch_ticket(
+    ticket_id: int,
+    db: DbSession,
+    current: CurrentAgent,
+    skill_group: str | None = None,
+) -> AgentTicketOut:
+    """坐席派单（US-24）：工单类 pending → dispatched（可选技能组，触发通知）。
+
+    B14（issue #55 AC2）：工单管理列表行内「派单」/ 详情页「派单到技能组」共用。
+    skill_group 为可选 query 参数（无技能组时仅流转状态）。
+    """
+    ticket = _get_agent_ticket_or_404(db, ticket_id)
+    ticket = await _transition_agent_ticket(
+        db, ticket, "dispatched", current, skill_group=skill_group
+    )
+    return _agent_ticket_out(db, ticket)
+
+
+@router.post("/tickets/{ticket_id}/close", response_model=AgentTicketOut)
+async def close_ticket(
+    ticket_id: int, db: DbSession, current: CurrentAgent
+) -> AgentTicketOut:
+    """坐席关闭（US-24）：工单类 awaiting_confirmation → closed（触发通知）。"""
+    ticket = _get_agent_ticket_or_404(db, ticket_id)
+    ticket = await _transition_agent_ticket(db, ticket, "closed", current)
+    return _agent_ticket_out(db, ticket)
+
+
+@router.post("/tickets/{ticket_id}/cancel", response_model=AgentTicketOut)
+async def cancel_ticket(
+    ticket_id: int, db: DbSession, current: CurrentAgent
+) -> AgentTicketOut:
+    """坐席取消（US-24）：非终态 → cancelled（不触发通知）。"""
+    ticket = _get_agent_ticket_or_404(db, ticket_id)
+    ticket = await _transition_agent_ticket(db, ticket, "cancelled", current)
+    return _agent_ticket_out(db, ticket)

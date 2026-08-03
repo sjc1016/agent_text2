@@ -84,3 +84,40 @@ class AgentCustomerProfileOut(BaseModel):
     balance: float
     plan_name: str | None
     contract_expiry_date: date | None
+
+
+class ConversationViewOut(BaseModel):
+    """坐席视角单会话视图（US-21，active-chat 页会话上下文）。
+
+    仅 handed_off 转接中的会话可见（复用消息历史可见性规则，否则 404）；
+    customer_phone 经 mask_phone 脱敏（138****0001）；handoff_reason 为
+    转接原因（explicit_request / out_of_scope 等，PRD queue 页 Caption 同源）。
+    """
+
+    conversation_id: int
+    status: str
+    customer_id: int | None
+    customer_phone: str | None  # 脱敏（138****0001）
+    handoff_reason: str | None  # 转接原因
+    created_at: datetime
+
+
+class AgentTicketOut(BaseModel):
+    """坐席视角工单（列表/详情项，US-27/28）：TicketOut 字段 + 脱敏号码 + 技能组。
+
+    customer_phone 经 mask_phone 脱敏（138****0001）；skill_group 记录派单目标技能组。
+    """
+
+    id: int
+    conversation_id: int
+    ticket_type: str
+    status: str
+    content: str
+    skill_group: str | None
+    customer_id: int | None
+    customer_phone: str | None  # 脱敏（138****0001）
+    contact_name: str | None
+    contact_phone: str | None
+    creator_type: str
+    creator_id: int | None
+    created_at: datetime
