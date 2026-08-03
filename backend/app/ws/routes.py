@@ -43,11 +43,12 @@ from app.db import get_db
 from app.models import Conversation, Customer, Message, User
 from app.ws.events import (
     ConversationStatePayload,
+    HandoffEndPayload,
     MessageNewPayload,
     SystemMessagePayload,
     WsEventName,
 )
-from app.ws.hub import hub
+from app.ws.hub import hub, push_handoff_end, push_handoff_start
 
 router = APIRouter()
 
@@ -207,6 +208,8 @@ async def _handle_inbound(
         await _handle_client_message(websocket, db, subject, data)
     elif msg_type == "state_transition":
         await _handle_state_transition(websocket, db, subject, data)
+    elif msg_type == "handoff":
+        await _handle_client_handoff(websocket, db, subject, data)
 
 
 async def _handle_agent_inbound(
@@ -331,6 +334,12 @@ async def _handle_agent_transfer_back(
     db.refresh(conv)
     await _push_system_message(websocket, f"会话 #{conv.id} 已转回智能助理")
     await _push_conversation_state(websocket, conv, old_state)
+    # handoff.end：Handoff 周期结束（B8，issue #17；CONTEXT › 转接）
+    end_payload = HandoffEndPayload(
+        conversation_id=conv.id,
+        changed_at=datetime.now(timezone.utc),
+    ).model_dump(mode="json")
+    await _send_event(websocket, WsEventName.HANDOFF_END, end_payload)
     if conv.customer_id is not None:
         state_payload = ConversationStatePayload(
             conversation_id=conv.id,
@@ -344,6 +353,7 @@ async def _handle_agent_transfer_back(
             created_at=datetime.now(timezone.utc),
         ).model_dump(mode="json")
         await hub.push_to_customer(conv.customer_id, WsEventName.SYSTEM_MESSAGE, hint)
+        await push_handoff_end(conv)
 
 
 async def _handle_client_message(
@@ -400,3 +410,56 @@ async def _handle_state_transition(
 
     db.commit()
     await _push_conversation_state(websocket, conv, old_state)
+
+
+async def _handle_client_handoff(
+    websocket: WebSocket, db: Session, customer: Customer, data: dict[str, Any]
+) -> None:
+    """处理客户端触发 Handoff（B8，issue #17；CONTEXT › 转接 / 转接触发）。
+
+    6 类条件评估（triggers.py 纯函数）由助理流程调用后，把结论 reason 透传到本
+    处理器执行：trigger_handoff（正常转接 / 离线兜底）→ 推 system.message 转接提示
+    + conversation.state（→ handed_off）+ handoff.start（reason / offline_fallback）。
+
+    会话不属于当前客户 → system.message 无权限提示（不泄露存在性）。
+    非法 reason / 已在转接中 → system.message 错误提示，状态不变更。
+    """
+    from app.handoff.service import trigger_handoff
+    from app.handoff.triggers import HandoffReason
+
+    conversation_id = data.get("conversation_id")
+    reason = data.get("reason")
+    if not isinstance(conversation_id, int) or not isinstance(reason, str):
+        return
+    try:
+        reason_enum = HandoffReason(reason)
+    except ValueError:
+        await _push_system_message(websocket, f"非法转接原因: {reason!r}")
+        return
+
+    conv = get_customer_conversation_or_none(db, customer, conversation_id)
+    if conv is None:
+        await _push_system_message(websocket, "无权操作该会话")
+        return
+    if conv.status == "handed_off":
+        await _push_system_message(websocket, "会话已在转接中")
+        return
+
+    old_state = conv.status
+    skill_group = data.get("skill_group")
+    outcome = trigger_handoff(
+        db,
+        conv,
+        reason_enum,
+        skill_group=skill_group if isinstance(skill_group, str) else None,
+    )
+
+    await _push_system_message(websocket, "正在为您转接人工坐席，请稍候")
+    await _push_conversation_state(websocket, conv, old_state)
+    if conv.customer_id is not None:
+        await push_handoff_start(
+            conv,
+            outcome.reason.value,
+            outcome.offline_fallback,
+            outcome.ticket_id,
+        )

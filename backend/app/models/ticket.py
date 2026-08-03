@@ -56,6 +56,8 @@ class Ticket(Base):
         认证后或坐席补全时回填。
       - 一个 Conversation 可并存多个 Ticket。
     creator_type 表达创建者形态（customer/agent/assistant），creator_id 关联对应主体。
+    skill_group 记录派单目标技能组（套餐业务组/故障报修组/投诉处理组）；回呼请求
+    Ticket（B8 离线兜底）创建即派单到此字段标注的组（CONTEXT › 离线兜底）。
     """
 
     __tablename__ = "tickets"
@@ -72,6 +74,7 @@ class Ticket(Base):
         server_default=TicketStatus.PENDING.value,
     )
     content: Mapped[str] = mapped_column(String, nullable=False)
+    skill_group: Mapped[str | None] = mapped_column(String, nullable=True)
     customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"), nullable=True)
     contact_name: Mapped[str | None] = mapped_column(String, nullable=True)
     contact_phone: Mapped[str | None] = mapped_column(String, nullable=True)
