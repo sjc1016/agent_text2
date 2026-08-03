@@ -8,6 +8,7 @@ import ProfileView from '../views/ProfileView.vue'
 import ProfileHistoryView from '../views/ProfileHistoryView.vue'
 import { useSessionStore } from '../stores/session'
 import { useChatStore } from '../stores/chat'
+import type { CustomerProfile } from '../api/customers'
 import type { Conversation } from '../api/conversations'
 
 /**
@@ -58,9 +59,28 @@ function setAuthenticated() {
   useSessionStore().setAuthenticated({ accessToken: 'at', refreshToken: 'rt' }, '13800001234')
 }
 
-/** 按 URL 路由 fetch mock：/api/conversations 列表 + /api/conversations/{id}/messages 历史。 */
-function mockConversationData(conversations: ConversationFixture[]) {
+/** 账户资料 fixture（镜像 backend CustomerProfileOut；B13 真实数据源）。 */
+const profileFixture: CustomerProfile = {
+  id: 9,
+  phone: '13800001234',
+  name: '张三',
+  balance: 88.5,
+  plan_name: '畅享套餐',
+  contract_expiry_date: '2027-12-31',
+}
+
+/**
+ * 按 URL 路由 fetch mock：/api/customers/me 账户资料 +
+ * /api/conversations 列表 + /api/conversations/{id}/messages 历史。
+ */
+function mockConversationData(
+  conversations: ConversationFixture[],
+  profile: CustomerProfile = profileFixture,
+) {
   fetchMock.mockImplementation((url: string) => {
+    if (url === '/api/customers/me') {
+      return Promise.resolve({ ok: true, json: async () => profile })
+    }
     if (url === '/api/conversations') {
       return Promise.resolve({
         ok: true,
@@ -196,6 +216,9 @@ describe('ProfileView — loading（States 矩阵 loading：骨架屏）', () =>
       setAuthenticated()
       fetchMock.mockImplementation((url: string) => {
         if (url === '/api/conversations') return pending
+        if (url === '/api/customers/me') {
+          return Promise.resolve({ ok: true, json: async () => profileFixture })
+        }
         return Promise.resolve({ ok: true, json: async () => [] })
       })
     })

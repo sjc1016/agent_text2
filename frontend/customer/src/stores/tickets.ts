@@ -1,8 +1,8 @@
 import { defineStore } from 'pinia'
 
 import {
+  listNotifications,
   listTickets,
-  listUnreadNotifications,
   type Ticket,
   type TicketNotification,
 } from '../api/tickets'
@@ -11,7 +11,8 @@ import {
  * tickets store（#16 UI-C-4）：承载「我的工单」页数据源与交互态。
  *
  * 职责边界：
- *   - tickets / notifications：工单列表 + 未读通知（US-14，数据源 api/tickets.ts）。
+ *   - tickets / notifications：工单列表 + 站内通知（US-14，数据源 api/tickets.ts；
+ *     B13 起通知走真实 GET /notifications，未读过滤由 unreadNotifications getter）。
  *   - loading：列表加载态（States 矩阵 loading → 骨架屏）。
  *   - expandedId：当前展开的工单行（内联嵌套卡片，点击行展开/收起）。
  *   - 认证态不在此判定：视图层按 session.isAuthenticated 路由到未认证变体。
@@ -45,7 +46,7 @@ export const useTicketsStore = defineStore('tickets', {
       try {
         const [tickets, notifications] = await Promise.all([
           listTickets(token),
-          listUnreadNotifications(token),
+          listNotifications(token),
         ])
         this.tickets = tickets
         this.notifications = notifications

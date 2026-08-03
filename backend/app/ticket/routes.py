@@ -19,12 +19,18 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import CurrentCustomer
 from app.db import get_db
 from app.models import Notification, Ticket
-from app.ticket.schemas import TicketCreate, TicketOut, TicketStatusUpdate
+from app.ticket.schemas import (
+    NotificationOut,
+    TicketCreate,
+    TicketOut,
+    TicketStatusUpdate,
+)
 from app.ticket.service import (
     create_notification,
     create_ticket,
@@ -110,3 +116,23 @@ async def update_status(
     if notification is not None:
         await push_notification(notification)
     return ticket
+
+
+notifications_router = APIRouter(prefix="/notifications", tags=["notification"])
+
+
+@notifications_router.get("", response_model=list[NotificationOut])
+def list_notifications(db: DbSession, current: CurrentCustomer) -> list[Notification]:
+    """当前客户的站内通知列表（US-14，UI-C-4 通知预览条冷启动数据源）。
+
+    B13（issue #53 AC2）：notifications 表 + WS notification.push（B7）已有，
+    本端点补 REST 读取——页面打开前产生的通知可获取；按 created_at 倒序
+    （同 created_at 按 id 倒序），含 read 未读标记（前端预览条过滤未读）。
+    仅返回当前客户的通知（主体隔离）；未认证 401 由 CurrentCustomer 守卫。
+    """
+    stmt = (
+        select(Notification)
+        .where(Notification.customer_id == current.id)
+        .order_by(Notification.created_at.desc(), Notification.id.desc())
+    )
+    return list(db.execute(stmt).scalars().all())

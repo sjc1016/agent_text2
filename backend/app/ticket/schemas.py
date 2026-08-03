@@ -45,3 +45,19 @@ class TicketOut(BaseModel):
     creator_type: str
     creator_id: int | None
     created_at: datetime
+
+
+class NotificationOut(BaseModel):
+    """站内通知（GET /notifications 响应，US-14 通知预览条冷启动数据源）。
+
+    镜像 Notification 模型（ticket_id/message/read/created_at）；
+    read 未读标记供前端预览条过滤未读。
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    ticket_id: int
+    message: str
+    read: bool
+    created_at: datetime

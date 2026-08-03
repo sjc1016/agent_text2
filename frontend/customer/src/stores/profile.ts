@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 
+import { getMyProfile, type CustomerProfile } from '../api/customers'
 import { listConversations, listMessages } from '../api/conversations'
 
 /**
@@ -8,9 +9,9 @@ import { listConversations, listMessages } from '../api/conversations'
  * 职责边界：
  *   - history：会话历史列表（US-17）——经 B2 `GET /conversations` + 每会话
  *     `GET /conversations/{id}/messages` 聚合「起止时间 + 末条消息预览」。
+ *   - profile：当前客户资料 + 账户信息（账号卡片，US-17）——经 B13
+ *     `GET /customers/me` 真实数据源（套餐简述 plan_name 替代 #11 mock）。
  *   - loading：列表加载态（States 矩阵 loading → 骨架屏）。
- *   - planSummary：当前套餐简述（账号卡片）——后端无 customer-web 账户资料
- *     查询端点，沿用 #16/#20/#21 mock-先行模式，后端落地后替换。
  *   - 认证态不在此判定：视图层按 session.isAuthenticated 路由到访客变体。
  */
 
@@ -26,28 +27,29 @@ export interface ConversationHistoryItem {
   preview: string
 }
 
-/**
- * 当前套餐简述（账号卡片 Body-sm；数据缺口：后端无端点。
- * TODO(backend)：补 GET /customers/me 账户资料后替换为真实数据源）。
- */
-const MOCK_PLAN_SUMMARY = '畅享套餐 59 元/月'
-
 export const useProfileStore = defineStore('profile', {
   state: () => ({
     history: [] as ConversationHistoryItem[],
     loading: false,
+    /** 当前客户账户资料（账号卡片数据源；未认证/加载失败时为 null）。 */
+    profile: null as CustomerProfile | null,
   }),
   getters: {
+    /** 当前套餐简述（账号卡片；B13 真实数据源，替代 #11 mock 常量）。 */
     planSummary(): string {
-      return MOCK_PLAN_SUMMARY
+      return this.profile?.plan_name ?? ''
     },
   },
   actions: {
-    /** 拉取会话历史（并发放置 loading；失败抛出由视图层处理）。 */
+    /** 拉取账户资料 + 会话历史（并发放置 loading；失败抛出由视图层处理）。 */
     async load(token: string): Promise<void> {
       this.loading = true
       try {
-        const conversations = await listConversations(token)
+        const [profile, conversations] = await Promise.all([
+          getMyProfile(token),
+          listConversations(token),
+        ])
+        this.profile = profile
         const items = await Promise.all(
           conversations.map(async (conv) => {
             const messages = await listMessages(token, conv.id)

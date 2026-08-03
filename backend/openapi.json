@@ -637,6 +637,33 @@
         }
       }
     },
+    "/customers/me": {
+      "get": {
+        "tags": [
+          "customer"
+        ],
+        "summary": "Read My Profile",
+        "description": "返回当前认证客户的资料 + 账户信息（US-17，账号卡片数据源）。\n\n仅当前客户自身可读（CurrentCustomer 守卫）；Customer 存在但无账户记录\n→ 404（不编造账户信息，与 B12 坐席侧行为一致）。",
+        "operationId": "read_my_profile_customers_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerProfileOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/tickets": {
       "get": {
         "tags": [
@@ -815,6 +842,37 @@
             }
           }
         }
+      }
+    },
+    "/notifications": {
+      "get": {
+        "tags": [
+          "notification"
+        ],
+        "summary": "List Notifications",
+        "description": "当前客户的站内通知列表（US-14，UI-C-4 通知预览条冷启动数据源）。\n\nB13（issue #53 AC2）：notifications 表 + WS notification.push（B7）已有，\n本端点补 REST 读取——页面打开前产生的通知可获取；按 created_at 倒序\n（同 created_at 按 id 倒序），含 read 未读标记（前端预览条过滤未读）。\n仅返回当前客户的通知（主体隔离）；未认证 401 由 CurrentCustomer 守卫。",
+        "operationId": "list_notifications_notifications_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NotificationOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Notifications Notifications Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/transactions/plan-change": {
@@ -1916,6 +1974,67 @@
         "title": "CoverageAreaOut",
         "description": "网络覆盖项（4G/5G 覆盖等级）。"
       },
+      "CustomerProfileOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "balance": {
+            "type": "number",
+            "title": "Balance"
+          },
+          "plan_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Name"
+          },
+          "contract_expiry_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contract Expiry Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "phone",
+          "name",
+          "balance",
+          "plan_name",
+          "contract_expiry_date"
+        ],
+        "title": "CustomerProfileOut",
+        "description": "当前客户资料 + 账户信息（/customers/me 响应，US-17）。\n\n客户视角读取自身账户：号码不脱敏（与 B12 坐席侧 /agents/customers/{id}\n脱敏视图不同——自己看自己）；authenticated 恒真故省略；账户字段复用\ninquiry 数据源 CustomerAccount（余额/套餐名/合约到期），与坐席侧同一数据源。"
+      },
       "CustomerPublic": {
         "properties": {
           "id": {
@@ -2195,6 +2314,41 @@
         ],
         "title": "MessageOut",
         "description": "消息历史项。source 四类分类由循环3 约束，此处仅透传。"
+      },
+      "NotificationOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "ticket_id": {
+            "type": "integer",
+            "title": "Ticket Id"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "read": {
+            "type": "boolean",
+            "title": "Read"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "ticket_id",
+          "message",
+          "read",
+          "created_at"
+        ],
+        "title": "NotificationOut",
+        "description": "站内通知（GET /notifications 响应，US-14 通知预览条冷启动数据源）。\n\n镜像 Notification 模型（ticket_id/message/read/created_at）；\nread 未读标记供前端预览条过滤未读。"
       },
       "PlanChangeRequest": {
         "properties": {

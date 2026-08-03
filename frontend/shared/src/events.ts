@@ -41,11 +41,9 @@ export type WsEventName = (typeof WS_EVENT_NAMES)[number]
  * 与 backend/app/ws/events.py 的 MessageNewPayload / SystemMessagePayload 镜像。
  * B2 循环6（issue #7 验收4）：细化 'conversation.state'，
  * 与 backend/app/ws/events.py 的 ConversationStatePayload 镜像。
+ * B6（issue #14）：细化 'second.confirm' | 'reauth.required'。
+ * B8（issue #17）：细化 'handoff.start' | 'handoff.end'。
  * #24 UI-C-3：细化 'llm.token'，与 backend/app/ws/events.py 的 LlmTokenPayload 镜像。
- *
- * TODO（后续切片）：
- *   - transaction 切片（B6）：'second.confirm' | 'reauth.required' 已细化（见下）
- *   - 'handoff.start' | 'handoff.end' 已由 B8（issue #17）细化（见下）
  */
 
 /** 会话状态机全部合法状态名（PRD line 286）。 */
