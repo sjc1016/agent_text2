@@ -43,6 +43,14 @@ async function expectOk(response: Response): Promise<Response> {
   return response
 }
 
+/** 拉取当前客户会话列表（B2；#11 profile 会话历史经此 + 每会话消息聚合）。 */
+export async function listConversations(token: string): Promise<Conversation[]> {
+  const response = await expectOk(
+    await fetch('/api/conversations', { headers: authHeaders(token) }),
+  )
+  return (await response.json()) as Conversation[]
+}
+
 /** 创建新会话（认证客户；新会话以 authenticated 起步，#24 对话页入口）。 */
 export async function createConversation(token: string): Promise<Conversation> {
   const response = await expectOk(
