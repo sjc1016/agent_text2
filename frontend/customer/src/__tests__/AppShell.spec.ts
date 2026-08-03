@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent } from 'vue'
+import ElementPlus from 'element-plus'
 
 import AppShell from '../components/AppShell.vue'
 import { useSessionStore } from '../stores/session'
@@ -37,7 +38,10 @@ async function mountShell(initial = '/chat') {
   const router = makeRouter()
   await router.push(initial)
   await router.isReady()
-  const wrapper = mount({ template: '<router-view />' }, { global: { plugins: [router] } })
+  const wrapper = mount(
+    { template: '<router-view />' },
+    { global: { plugins: [router, ElementPlus] } },
+  )
   return { wrapper, router }
 }
 
@@ -58,7 +62,7 @@ describe('AppShell — default state', () => {
     expect(wrapper.find('[data-testid="app-bottom-tab"]').exists()).toBe(true)
   })
 
-  it('底栏含三个 Tab：会话/我的工单/我的', async () => {
+  it('底栏含三个 Tab：会话/我的工单/我的，各含 24px 图标', async () => {
     const { wrapper } = await mountShell('/chat')
 
     const tabs = wrapper.findAll('[data-testid="bottom-tab-item"]')
@@ -66,6 +70,14 @@ describe('AppShell — default state', () => {
     expect(tabs[0].text()).toContain('会话')
     expect(tabs[1].text()).toContain('我的工单')
     expect(tabs[2].text()).toContain('我的')
+
+    // DESIGN.md §5.5 底栏 Tab：每个 Tab 渲染 24px 线性图标（el-icon 以 font-size 定尺寸）
+    for (const tab of tabs) {
+      const icon = tab.find('.bottom-tab-item__icon')
+      expect(icon.exists()).toBe(true)
+      expect(icon.find('svg').exists()).toBe(true)
+      expect(icon.attributes('style')).toContain('font-size: 24px')
+    }
   })
 
   it('点击「我的工单」Tab 切换路由到 /tickets', async () => {

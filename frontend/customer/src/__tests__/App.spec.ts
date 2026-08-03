@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent, type Component } from 'vue'
+import ElementPlus from 'element-plus'
 
 import App from '../App.vue'
 import AppShell from '../components/AppShell.vue'
@@ -40,7 +41,7 @@ describe('App', () => {
     await router.push('/chat')
     await router.isReady()
 
-    const wrapper = mount(App, { global: { plugins: [router] } })
+    const wrapper = mount(App, { global: { plugins: [router, ElementPlus] } })
     await flushPromises()
 
     expect(wrapper.find('[data-testid="app-header"]').exists()).toBe(true)
@@ -56,7 +57,7 @@ describe('App — loading state（路由切换全屏 spinner + 遮罩）', () =>
     const router = makeRouter()
     await router.push('/chat')
     await router.isReady()
-    const wrapper = mount(App, { global: { plugins: [router] } })
+    const wrapper = mount(App, { global: { plugins: [router, ElementPlus] } })
     await flushPromises()
 
     expect(wrapper.find('[data-testid="route-loading-overlay"]').exists()).toBe(true)
@@ -70,7 +71,7 @@ describe('App — loading state（路由切换全屏 spinner + 遮罩）', () =>
     const router = makeRouter()
     await router.push('/chat')
     await router.isReady()
-    const wrapper = mount(App, { global: { plugins: [router] } })
+    const wrapper = mount(App, { global: { plugins: [router, ElementPlus] } })
     await flushPromises()
 
     ui.routeLoading = true
@@ -112,7 +113,7 @@ describe('App — loading state（路由切换全屏 spinner + 遮罩）', () =>
 
     await router.push('/chat')
     await router.isReady()
-    const wrapper = mount(App, { global: { plugins: [router] } })
+    const wrapper = mount(App, { global: { plugins: [router, ElementPlus] } })
     await flushPromises()
     expect(ui.routeLoading).toBe(false)
 
@@ -139,7 +140,7 @@ describe('AppShell — auth 壳层变体（脱离壳层全屏）', () => {
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/auth')
     await router.isReady()
-    const wrapper = mount(App, { global: { plugins: [router] } })
+    const wrapper = mount(App, { global: { plugins: [router, ElementPlus] } })
     await flushPromises()
 
     expect(wrapper.find('[data-testid="app-header"]').exists()).toBe(false)
@@ -152,7 +153,7 @@ describe('AppShell — auth 壳层变体（脱离壳层全屏）', () => {
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/chat')
     await router.isReady()
-    const wrapper = mount(App, { global: { plugins: [router] } })
+    const wrapper = mount(App, { global: { plugins: [router, ElementPlus] } })
     await flushPromises()
 
     expect(wrapper.find('[data-testid="app-header"]').exists()).toBe(true)

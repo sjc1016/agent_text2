@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import type { Component } from 'vue'
 import { RouterView, RouterLink } from 'vue-router'
+import { ChatDotRound, Tickets, User } from '@element-plus/icons-vue'
 import { useSessionStore } from '../stores/session'
 import { useUiStore } from '../stores/ui'
 
@@ -10,13 +12,15 @@ interface TabItem {
   to: string
   label: string
   tab: string
+  /** 24px 线性图标（DESIGN.md §5.5 底栏 Tab：图标 24px 描边 1.5px）。 */
+  icon: Component
 }
 
 /** 底栏三 Tab，对应 PRD app-shell「会话/我的工单/我的」。 */
 const tabs: TabItem[] = [
-  { to: '/chat', label: '会话', tab: 'chat' },
-  { to: '/tickets', label: '我的工单', tab: 'tickets' },
-  { to: '/profile', label: '我的', tab: 'profile' },
+  { to: '/chat', label: '会话', tab: 'chat', icon: ChatDotRound },
+  { to: '/tickets', label: '我的工单', tab: 'tickets', icon: Tickets },
+  { to: '/profile', label: '我的', tab: 'profile', icon: User },
 ]
 </script>
 
@@ -53,6 +57,9 @@ const tabs: TabItem[] = [
         :data-tab="item.tab"
         class="bottom-tab-item"
       >
+        <el-icon :size="24" class="bottom-tab-item__icon" aria-hidden="true">
+          <component :is="item.icon" />
+        </el-icon>
         <span class="bottom-tab-item__label">{{ item.label }}</span>
       </RouterLink>
     </nav>
@@ -142,14 +149,21 @@ const tabs: TabItem[] = [
   flex-shrink: 0;
 }
 
+/* 底栏 Tab：DESIGN.md §5.5——48px 高、图标 24px、默认 Neutral 500、选中 Primary 500。 */
 .bottom-tab-item {
   flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 2px;
   text-decoration: none;
   color: #6b7280;
   font-size: 12px;
+}
+
+.bottom-tab-item__icon {
+  color: inherit;
 }
 
 .bottom-tab-item.router-link-active {
