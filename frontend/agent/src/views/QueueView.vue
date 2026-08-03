@@ -17,7 +17,7 @@ const router = useRouter()
 const queue = useQueueStore()
 const auth = useAuthStore()
 
-/** 坐席 JWT（#18 login 合并后由 auth store 提供；未登录为空串 → 401，待 #21 路由守卫统一处理）。 */
+/** 坐席 JWT（#18 login 合并后由 auth store 提供；未登录已由鉴权守卫重定向 /login，#58）。 */
 const ACCESS_TOKEN = auth.accessToken
 
 onMounted(() => {

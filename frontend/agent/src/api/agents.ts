@@ -10,6 +10,8 @@
  *     （B11 issue #42 AC3：回呼请求工单列表，US-29）
  */
 
+import { dispatchAuthExpired, isAgentCredentialExpired } from '../stores/auth'
+
 export interface TokenResponse {
   access_token: string
   refresh_token: string
@@ -77,6 +79,11 @@ function authHeaders(token: string): Record<string, string> {
 }
 
 async function expectOk(response: Response): Promise<Response> {
+  if (isAgentCredentialExpired(response)) {
+    // 坐席凭证无效/过期（auth dependency 401 + WWW-Authenticate: Bearer）：
+    // 派发凭证失效事件，由守卫监听清除凭证并跳回登录页（issue #58 验收标准 4）。
+    dispatchAuthExpired()
+  }
   if (!response.ok) {
     let detail = '请求失败'
     try {
