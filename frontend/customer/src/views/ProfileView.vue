@@ -86,7 +86,12 @@ function logout() {
       <h2 data-testid="history-title" class="history-title">会话历史</h2>
 
       <!-- 加载变体（States 矩阵 loading / DESIGN.md §5.10 骨架屏）：48px 行左头像圆形 + 右两行文本条 -->
-      <div v-if="store.loading" data-testid="history-skeleton" class="history-skeleton" aria-busy="true">
+      <div
+        v-if="store.loading"
+        data-testid="history-skeleton"
+        class="history-skeleton"
+        aria-busy="true"
+      >
         <div
           v-for="n in 3"
           :key="n"
@@ -131,11 +136,7 @@ function logout() {
         </button>
       </div>
       <!-- 会话历史空状态（States 矩阵 history-empty）：居中插画 + 主文案「暂无历史会话」 -->
-      <div
-        v-else-if="!store.loading"
-        data-testid="history-empty"
-        class="empty-state"
-      >
+      <div v-else-if="!store.loading" data-testid="history-empty" class="empty-state">
         <el-icon
           data-testid="history-empty-illustration"
           :size="64"
