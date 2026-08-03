@@ -24,31 +24,34 @@ from app.agent.service import AssistantService
 # 循环1-RED1：FakeListLLM 注入 + 流式 token 生成（行为：逐 token 产出）
 # ---------------------------------------------------------------------------
 class TestFakeLLMStreaming:
-    def test_fake_llm_returns_tokens_one_by_one(self):
+    @pytest.mark.anyio
+    async def test_fake_llm_returns_tokens_one_by_one(self):
         """FakeListLLM 按列表顺序逐个产出 token（保证 CI 确定性）。"""
         tokens = ["你", "好", "，", "请", "问", "有", "什", "么", "可", "以", "帮", "您", "？"]
         llm: BaseLLM = FakeListLLM(responses=["".join(tokens)])
         # 对话历史（单轮 user 消息）
         history = [ChatMessage(role=ChatRole.USER, content="您好")]
         collected: list[str] = []
-        for tok in llm.stream(history):
+        async for tok in llm.stream(history):
             collected.append(tok)
         # 逐 token 生成（字符串拆分为字符级 token，模拟真实分段）
         assert collected == tokens
 
-    def test_fake_llm_returns_full_text(self):
+    @pytest.mark.anyio
+    async def test_fake_llm_returns_full_text(self):
         """FakeListLLM invoke 返回完整文本（非流式接口）。"""
         llm = FakeListLLM(responses=["完整回复内容"])
-        result = llm.invoke([ChatMessage(role=ChatRole.USER, content="hi")])
+        result = await llm.invoke([ChatMessage(role=ChatRole.USER, content="hi")])
         assert result == "完整回复内容"
 
-    def test_fake_llm_cycles_responses(self):
+    @pytest.mark.anyio
+    async def test_fake_llm_cycles_responses(self):
         """多轮对话循环 responses 列表（超出时循环）。"""
         llm = FakeListLLM(responses=["第一轮", "第二轮"])
         h = [ChatMessage(role=ChatRole.USER, content="q1")]
-        assert llm.invoke(h) == "第一轮"
-        assert llm.invoke(h) == "第二轮"
-        assert llm.invoke(h) == "第一轮"  # 循环
+        assert await llm.invoke(h) == "第一轮"
+        assert await llm.invoke(h) == "第二轮"
+        assert await llm.invoke(h) == "第一轮"  # 循环
 
 
 # ---------------------------------------------------------------------------

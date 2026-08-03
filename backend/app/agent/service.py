@@ -118,7 +118,8 @@ class AssistantService:
         for _ in range(max_cycles):
             raw_tokens: list[str] = []
             try:
-                for token in self.llm.stream(history):
+                # async 流式：真实 LLM（OpenAICompatLLM）异步 httpx 不阻塞事件循环（issue #67）
+                async for token in self.llm.stream(history):
                     raw_tokens.append(token)
             except Exception as exc:  # noqa: BLE001 - LLM provider 错误（过载/超时）兜底
                 # 真实 LLM（如 NVIDIA 529 过载）瞬时失败时降级为提示话术，

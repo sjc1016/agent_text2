@@ -15,7 +15,7 @@ LangChain 集成：
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -77,18 +77,25 @@ def _to_langchain_message(msg: ChatMessage) -> BaseMessage:
 class BaseLLM:
     """LLM 抽象基类（seam：FakeListLLM 与真实 LLM 实现此接口）。
 
-    接口尽量小（深模块）：仅暴露 invoke(非流式) 与 stream(流式)，
-    不关心具体 provider（OpenAI/本地/伪）。子类可：
-      - 直接实现 stream()（如测试用的 _HistoryInspectingLLM），或
+    接口尽量小（深模块）：仅暴露 invoke(非流式) 与 stream(流式)，两者均为
+    **异步**接口（issue #67：同步 httpx 在 async 对话流中阻塞 asyncio 事件
+    循环，导致多会话并发 + APScheduler 调度任务被拖卡）。子类可：
+      - 直接实现 async stream()（如测试用的 _HistoryInspectingLLM），或
       - 包装 langchain BaseChatModel（如 FakeListLLM）。
     """
 
-    def invoke(self, messages: list[ChatMessage]) -> str:
+    async def invoke(self, messages: list[ChatMessage]) -> str:
         """非流式：返回完整文本。默认实现委托 stream 并拼接。"""
-        return "".join(self.stream(messages))
+        return "".join([token async for token in self.stream(messages)])
 
-    def stream(self, messages: list[ChatMessage]) -> Iterator[str]:
-        """流式：逐个产出 token（字符串片段，粒度由实现决定）。"""
+    def stream(self, messages: list[ChatMessage]) -> AsyncIterator[str]:
+        """流式：逐个产出 token（字符串片段，粒度由实现决定）。
+
+        声明为返回 AsyncIterator 的普通方法（非 async）而非 async def：
+        mypy 将 `async def` 视为协程（Coroutine），与子类 async generator 的
+        AsyncIterator 类型不兼容；去掉 async 后子类以 `async def ... yield`
+        实现即可正确匹配（调用侧 `async for` 直接消费）。
+        """
         raise NotImplementedError  # pragma: no cover - 子类实现
 
 
@@ -110,7 +117,7 @@ class FakeListLLM(BaseLLM):
             responses=[AIMessage(content=r) for r in responses]
         )
 
-    def stream(self, messages: list[ChatMessage]) -> Iterator[str]:
+    async def stream(self, messages: list[ChatMessage]) -> AsyncIterator[str]:
         # 将领域消息翻译为 langchain BaseMessage 后调用底层 chat model
         lc_messages = [_to_langchain_message(m) for m in messages]
         for chunk in self._chat_model.stream(lc_messages):
@@ -119,7 +126,8 @@ class FakeListLLM(BaseLLM):
             if not isinstance(content, str):
                 content = str(content)
             # 字符级分段：模拟真实流式输出（每片 1-2 字符，保证多 token 测试）
-            yield from content
+            for ch in content:
+                yield ch
 
 
 #: 追加到请求首部的 tool 调用协议说明（v1 简化协议 <|tool_call:name:json|>，
@@ -159,8 +167,8 @@ class OpenAICompatLLM(BaseLLM):
     与 FakeListLLM 实现同一 BaseLLM 接口（B3 seam，接口不变仅换 provider）：
       - invoke：POST /chat/completions（非流式）返回完整文本
       - stream：POST stream=true，逐 SSE delta 产出 content 片段
-    BaseLLM.stream 为同步迭代器（v1 单进程部署语义与 FakeListLLM 一致），
-    内部使用同步 httpx 客户端。
+    异步实现（issue #67）：内部使用 httpx.AsyncClient，全程 await——同步 httpx
+    在 async 对话流中阻塞事件循环（调度任务延迟 19s、多会话并发卡死）。
 
     协议说明：请求头部注入 _TOOL_PROTOCOL_PROMPT（system），工具清单经
     tool_descriptions 由调用方（ws/routes 从 ToolRegistry.list_tools 生成）注入。
@@ -175,14 +183,14 @@ class OpenAICompatLLM(BaseLLM):
         temperature: float = 0.7,
         timeout_seconds: float = 60.0,
         tool_descriptions: str = "",
-        http_client: httpx.Client | None = None,
+        http_client: httpx.AsyncClient | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
         self._model = model
         self._temperature = temperature
         self._tool_descriptions = tool_descriptions
-        self._client = http_client or httpx.Client(timeout=timeout_seconds)
+        self._client = http_client or httpx.AsyncClient(timeout=timeout_seconds)
 
     # ------------------------------------------------------------------
     # 内部：请求组装
@@ -213,10 +221,10 @@ class OpenAICompatLLM(BaseLLM):
         }
 
     # ------------------------------------------------------------------
-    # BaseLLM 接口
+    # BaseLLM 接口（异步）
     # ------------------------------------------------------------------
-    def invoke(self, messages: list[ChatMessage]) -> str:
-        resp = self._client.post(
+    async def invoke(self, messages: list[ChatMessage]) -> str:
+        resp = await self._client.post(
             self._chat_url(),
             headers=self._headers(),
             json=self._payload(messages, stream=False),
@@ -229,17 +237,17 @@ class OpenAICompatLLM(BaseLLM):
             return ""
         return choices[0].get("message", {}).get("content", "") or ""
 
-    def stream(self, messages: list[ChatMessage]) -> Iterator[str]:
+    async def stream(self, messages: list[ChatMessage]) -> AsyncIterator[str]:
         payload = self._payload(messages, stream=True)
-        with self._client.stream(
+        async with self._client.stream(
             "POST", self._chat_url(), headers=self._headers(), json=payload
         ) as resp:
             if resp.status_code != 200:
-                body = resp.read()
+                body = await resp.aread()
                 raise RuntimeError(
                     f"LLM API 流式调用失败（HTTP {resp.status_code}）：{body[:200]!r}"
                 )
-            for line in resp.iter_lines():
+            async for line in resp.aiter_lines():
                 if not line or not line.startswith("data:"):
                     continue
                 data = line[len("data:") :].strip()
@@ -258,7 +266,7 @@ class OpenAICompatLLM(BaseLLM):
 class FailoverLLM(BaseLLM):
     """LLM 主备自动切换：providers 依序尝试，当前 provider 抛错自动切下一个。
 
-    实现同一 BaseLLM 接口（B3 seam 不变）：
+    实现同一 BaseLLM 接口（B3 seam 不变，异步语义同 #67）：
       - invoke：按序调用，异常 → 切换下一个，全部失败抛最后一个异常
       - stream：迭代当前 provider 输出；中途抛错（如 NVIDIA 529 过载）→
         从下一个 provider 重新生成完整回复
@@ -271,11 +279,11 @@ class FailoverLLM(BaseLLM):
             raise ValueError("FailoverLLM.providers 不能为空")
         self._providers = list(providers)
 
-    def invoke(self, messages: list[ChatMessage]) -> str:
+    async def invoke(self, messages: list[ChatMessage]) -> str:
         last_exc: Exception | None = None
         for provider in self._providers:
             try:
-                return provider.invoke(messages)
+                return await provider.invoke(messages)
             except Exception as exc:  # noqa: BLE001 - 任一 provider 失败即切换
                 last_exc = exc
                 logger.warning(
@@ -286,11 +294,12 @@ class FailoverLLM(BaseLLM):
         assert last_exc is not None
         raise last_exc
 
-    def stream(self, messages: list[ChatMessage]) -> Iterator[str]:
+    async def stream(self, messages: list[ChatMessage]) -> AsyncIterator[str]:
         last_exc: Exception | None = None
         for provider in self._providers:
             try:
-                yield from provider.stream(messages)
+                async for token in provider.stream(messages):
+                    yield token
                 return
             except Exception as exc:  # noqa: BLE001 - 流式中途失败切换下一个
                 last_exc = exc
