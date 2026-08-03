@@ -5,6 +5,7 @@ import LoginView from '../views/LoginView.vue'
 import QueueView from '../views/QueueView.vue'
 import ActiveChatView from '../views/ActiveChatView.vue'
 import TicketsView from '../views/TicketsView.vue'
+import TicketDetailView from '../views/TicketDetailView.vue'
 import HistoryView from '../views/HistoryView.vue'
 import { setupRouteLoadingGuard } from './guards'
 
@@ -30,6 +31,8 @@ export const routes: RouteRecordRaw[] = [
       { path: 'queue', name: 'queue', component: QueueView },
       { path: 'active-chat', name: 'active-chat', component: ActiveChatView },
       { path: 'tickets', name: 'tickets', component: TicketsView },
+      // 工单详情（US-24 查看跳转目标；完整页由 UI-A-6 #23 实现，此处占位保证导航可用）
+      { path: 'tickets/:id', name: 'ticket-detail', component: TicketDetailView },
       { path: 'history', name: 'history', component: HistoryView },
     ],
   },
