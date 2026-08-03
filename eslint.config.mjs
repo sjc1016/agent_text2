@@ -16,5 +16,16 @@ export default [
   },
   ...pluginVue.configs['flat/essential'],
   ...vueTsEslintConfig(),
+  {
+    name: 'app/typescript-rules',
+    files: ['**/*.{ts,mts,tsx,vue}'],
+    rules: {
+      // 下划线前缀参数 = 有意未使用（mock 签名保持真实契约，参数暂不消费）
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+    },
+  },
   skipFormatting,
 ]
