@@ -1433,6 +1433,64 @@
         }
       }
     },
+    "/customers/me": {
+      "get": {
+        "tags": [
+          "customer"
+        ],
+        "summary": "Read Current Customer Me",
+        "description": "当前客户账户资料（未认证 401 由 CurrentCustomer 守卫）。\n\n复用 B12 同一数据源 get_customer_profile（Customer + CustomerAccount）；\nCustomer 或账户任一缺失 → 404（与坐席侧同语义，不编造账户信息）。",
+        "operationId": "read_current_customer_me_customers_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerMeOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/notifications": {
+      "get": {
+        "tags": [
+          "customer"
+        ],
+        "summary": "Read Current Customer Notifications",
+        "description": "当前客户站内通知列表（按时间倒序，含未读标记；未认证 401）。\n\nUS-14 通知预览条数据源（页面打开前产生的通知经本端点可获取，\n与 WS notification.push 实时推送互补）。response_model 负责 ORM 序列化。",
+        "operationId": "read_current_customer_notifications_notifications_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NotificationOut"
+                  },
+                  "type": "array",
+                  "title": "Response Read Current Customer Notifications Notifications Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/general-info/search": {
       "get": {
         "tags": [
@@ -2379,6 +2437,67 @@
         "title": "CoverageAreaOut",
         "description": "网络覆盖项（4G/5G 覆盖等级）。"
       },
+      "CustomerMeOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "balance": {
+            "type": "number",
+            "title": "Balance"
+          },
+          "plan_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Name"
+          },
+          "contract_expiry_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contract Expiry Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "phone",
+          "name",
+          "balance",
+          "plan_name",
+          "contract_expiry_date"
+        ],
+        "title": "CustomerMeOut",
+        "description": "客户侧自身账户资料（GET /customers/me 响应，US-17 账号信息）。\n\n复用 B12（issue #44）同一账户数据源 get_customer_profile：\nCustomerAccount 话费余额/套餐名/合约到期；phone 为完整号码（客户读\n自身资料，与 /auth/me CustomerPublic 同语义，不脱敏）。\n未认证 → 401（CurrentCustomer 守卫）；无账户记录 → 404（不编造）。"
+      },
       "CustomerPublic": {
         "properties": {
           "id": {
@@ -2658,6 +2777,41 @@
         ],
         "title": "MessageOut",
         "description": "消息历史项。source 四类分类由循环3 约束，此处仅透传。"
+      },
+      "NotificationOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "ticket_id": {
+            "type": "integer",
+            "title": "Ticket Id"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "read": {
+            "type": "boolean",
+            "title": "Read"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "ticket_id",
+          "message",
+          "read",
+          "created_at"
+        ],
+        "title": "NotificationOut",
+        "description": "客户侧站内通知项（GET /notifications 响应项，US-14 通知预览条数据源）。\n\n字段镜像 WS notification.push payload（NotificationPushPayload）与\nnotifications 表；read 未读标记供前端预览条 filter；时间倒序由查询保证。"
       },
       "PlanChangeRequest": {
         "properties": {

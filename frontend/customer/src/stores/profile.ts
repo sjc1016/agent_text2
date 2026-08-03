@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 
 import { listConversations, listMessages } from '../api/conversations'
+import { getCustomerMe, type CustomerMe } from '../api/customers'
 
 /**
  * profile store（#11 UI-C-5）：承载「我的」页数据源与交互态。
@@ -8,9 +9,9 @@ import { listConversations, listMessages } from '../api/conversations'
  * 职责边界：
  *   - history：会话历史列表（US-17）——经 B2 `GET /conversations` + 每会话
  *     `GET /conversations/{id}/messages` 聚合「起止时间 + 末条消息预览」。
+ *   - account：当前客户账户资料（US-17 账号信息）——经 B13 `GET /customers/me`；
+ *     planSummary 取 account.plan_name（B13 替换 MOCK_PLAN_SUMMARY 兜底）。
  *   - loading：列表加载态（States 矩阵 loading → 骨架屏）。
- *   - planSummary：当前套餐简述（账号卡片）——后端无 customer-web 账户资料
- *     查询端点，沿用 #16/#20/#21 mock-先行模式，后端落地后替换。
  *   - 认证态不在此判定：视图层按 session.isAuthenticated 路由到访客变体。
  */
 
@@ -26,28 +27,29 @@ export interface ConversationHistoryItem {
   preview: string
 }
 
-/**
- * 当前套餐简述（账号卡片 Body-sm；数据缺口：后端无端点。
- * TODO(backend)：补 GET /customers/me 账户资料后替换为真实数据源）。
- */
-const MOCK_PLAN_SUMMARY = '畅享套餐 59 元/月'
-
 export const useProfileStore = defineStore('profile', {
   state: () => ({
     history: [] as ConversationHistoryItem[],
+    /** 当前客户账户资料（B13 /customers/me；账户卡片套餐简述数据源）。 */
+    account: null as CustomerMe | null,
     loading: false,
   }),
   getters: {
+    /** 当前套餐简述（账号卡片 Body-sm；B13 起取 /customers/me 的 plan_name）。 */
     planSummary(): string {
-      return MOCK_PLAN_SUMMARY
+      return this.account?.plan_name ?? ''
     },
   },
   actions: {
-    /** 拉取会话历史（并发放置 loading；失败抛出由视图层处理）。 */
+    /** 拉取账户资料 + 会话历史（并发放置 loading；失败抛出由视图层处理）。 */
     async load(token: string): Promise<void> {
       this.loading = true
       try {
-        const conversations = await listConversations(token)
+        const [account, conversations] = await Promise.all([
+          getCustomerMe(token),
+          listConversations(token),
+        ])
+        this.account = account
         const items = await Promise.all(
           conversations.map(async (conv) => {
             const messages = await listMessages(token, conv.id)

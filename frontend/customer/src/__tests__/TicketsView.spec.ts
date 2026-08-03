@@ -6,7 +6,7 @@ import ElementPlus from 'element-plus'
 
 import TicketsView from '../views/TicketsView.vue'
 import { useSessionStore } from '../stores/session'
-import type { Ticket } from '../api/tickets'
+import type { Ticket, TicketNotification } from '../api/tickets'
 
 /**
  * #16 UI-C-4 循环：TicketsView（States 矩阵逐行验证）。
@@ -63,13 +63,38 @@ function ticket(overrides: Partial<Ticket> = {}): Ticket {
   }
 }
 
+/** 通知 fixture（镜像 backend NotificationOut，B13 后经 /api/notifications 返回）。 */
+const NOTIFICATIONS_FIXTURE: TicketNotification[] = [
+  {
+    id: 1,
+    ticket_id: 1,
+    message: '您的办理工单已生效',
+    read: false,
+    created_at: '2026-08-03T02:00:00Z',
+  },
+  {
+    id: 2,
+    ticket_id: 2,
+    message: '您的工单已派单',
+    read: false,
+    created_at: '2026-08-03T02:30:00Z',
+  },
+]
+
+/** 按 URL 路由 fetch mock：/api/notifications 返回通知，其余 URL 返回工单列表。 */
+function mockApi(tickets: Ticket[], notifications: TicketNotification[] = []) {
+  fetchMock.mockImplementation((url: string) => {
+    if (url === '/api/notifications') {
+      return Promise.resolve({ ok: true, json: async () => notifications })
+    }
+    return Promise.resolve({ ok: true, json: async () => tickets })
+  })
+}
+
 beforeEach(() => {
   localStorage.clear()
   fetchMock.mockReset()
-  fetchMock.mockResolvedValue({
-    ok: true,
-    json: async () => [ticket()],
-  })
+  mockApi([ticket()])
   vi.stubGlobal('fetch', fetchMock)
 })
 
@@ -81,18 +106,15 @@ describe('TicketsView — default（States 矩阵 default）', () => {
   it('渲染页面标题 + 本人工单列表（类型标签 + 主文案 + 创建时间 + 状态徽章）', async () => {
     const wrapper = await mountTickets(() => {
       setAuthenticated()
-      fetchMock.mockResolvedValue({
-        ok: true,
-        json: async () => [
-          ticket({
-            id: 1,
-            ticket_type: 'transaction',
-            status: 'pending',
-            content: '办理 10G 流量加装包',
-          }),
-          ticket({ id: 2, ticket_type: 'ticketing', status: 'closed', content: '宽带故障报修' }),
-        ],
-      })
+      mockApi([
+        ticket({
+          id: 1,
+          ticket_type: 'transaction',
+          status: 'pending',
+          content: '办理 10G 流量加装包',
+        }),
+        ticket({ id: 2, ticket_type: 'ticketing', status: 'closed', content: '宽带故障报修' }),
+      ])
     })
 
     expect(wrapper.find('[data-testid="tickets-title"]').text()).toContain('我的工单')
@@ -133,10 +155,7 @@ describe('TicketsView — status-badge-variants（验收标准：状态徽章按
     async ({ type, status, label, variant }) => {
       const wrapper = await mountTickets(() => {
         setAuthenticated()
-        fetchMock.mockResolvedValue({
-          ok: true,
-          json: async () => [ticket({ id: 1, ticket_type: type, status })],
-        })
+        mockApi([ticket({ id: 1, ticket_type: type, status })])
       })
 
       const badge = wrapper.find('[data-testid="ticket-status-badge"]')
@@ -147,7 +166,7 @@ describe('TicketsView — status-badge-variants（验收标准：状态徽章按
 })
 
 describe('TicketsView — expand-collapse（States 矩阵 default：点击行展开内联嵌套卡片）', () => {
-  /** 列表 + 关联通知 fixture（通知经 mock seam 返回，后端无 REST 端点）。 */
+  /** 列表 + 关联通知 fixture（通知经 B13 /api/notifications 真实端点 mock 返回）。 */
   const ticketsFixture = [
     ticket({
       id: 1,
@@ -161,7 +180,7 @@ describe('TicketsView — expand-collapse（States 矩阵 default：点击行展
   it('点击行展开内联卡片（内容摘要 + 状态流转时间线 + 关联通知），再次点击收起', async () => {
     const wrapper = await mountTickets(() => {
       setAuthenticated()
-      fetchMock.mockResolvedValue({ ok: true, json: async () => ticketsFixture })
+      mockApi(ticketsFixture, NOTIFICATIONS_FIXTURE)
     })
 
     // 初始：无展开卡片
@@ -187,7 +206,7 @@ describe('TicketsView — expand-collapse（States 矩阵 default：点击行展
   it('点击另一行展开其详情，原展开行收起（单展开语义）', async () => {
     const wrapper = await mountTickets(() => {
       setAuthenticated()
-      fetchMock.mockResolvedValue({ ok: true, json: async () => ticketsFixture })
+      mockApi(ticketsFixture, NOTIFICATIONS_FIXTURE)
     })
 
     const rows = wrapper.findAll('[data-testid="ticket-row"]')
@@ -211,13 +230,13 @@ describe('TicketsView — notice-preview（States 矩阵 default：未读通知�
   it('有未读通知时渲染预览条（文案 + 时间），点击展开对应工单', async () => {
     const wrapper = await mountTickets(() => {
       setAuthenticated()
-      fetchMock.mockResolvedValue({
-        ok: true,
-        json: async () => [
+      mockApi(
+        [
           ticket({ id: 1, ticket_type: 'transaction', status: 'processing' }),
           ticket({ id: 2, ticket_type: 'ticketing', status: 'dispatched' }),
         ],
-      })
+        NOTIFICATIONS_FIXTURE,
+      )
     })
 
     // 预览条（semantic-info-tint-bg 卡片）：未读通知按时间倒序各含文案
@@ -245,7 +264,7 @@ describe('TicketsView — empty（States 矩阵 empty：无工单空状态）', 
   it('无工单时显示居中空状态（插画 + 主文案 + 辅助文案），不渲染列表', async () => {
     const wrapper = await mountTickets(() => {
       setAuthenticated()
-      fetchMock.mockResolvedValue({ ok: true, json: async () => [] })
+      mockApi([])
     })
 
     expect(wrapper.find('[data-testid="tickets-list"]').exists()).toBe(false)

@@ -1,13 +1,11 @@
 /**
- * customer-web tickets REST 客户端（B7 契约，#16 UI-C-4）。
+ * customer-web tickets REST 客户端（B7 契约，#16 UI-C-4；B13 补齐通知端点）。
  *
  * 后端契约（backend/app/ticket/routes.py + schemas.py）：
  *   GET /api/tickets（Bearer）→ 200 list[TicketOut]（当前客户工单列表）
+ * 后端契约（backend/app/customers/routes.py，B13 #53）：
+ *   GET /api/notifications（Bearer）→ 200 list[NotificationOut]（当前客户通知，时间倒序）
  * 基址 `/api`：ADR 0006 / deploy/nginx.conf 反代契约（同 conversations.ts）。
- *
- * 数据缺口：未读通知（通知预览条）后端无 REST 查询端点（仅 WS notification.push
- * 实时推送，页面打开前产生的通知不可获取）。参照 agent 端 #20/#21 mock 先行模式，
- * listUnreadNotifications 以本地 mock 数据源驱动 UI，后端补端点后替换为真实 fetch。
  */
 
 /** 工单（镜像 backend TicketOut）。 */
@@ -111,29 +109,10 @@ export async function listTickets(token: string): Promise<Ticket[]> {
   return (await response.json()) as Ticket[]
 }
 
-/* ============ mock 数据源（数据缺口：后端无未读通知查询端点，落地后删除） ============ */
-
-const MOCK_NOTIFICATIONS: TicketNotification[] = [
-  {
-    id: 1,
-    ticket_id: 1,
-    message: '您的办理工单已生效',
-    read: false,
-    created_at: '2026-08-03T02:00:00Z',
-  },
-  {
-    id: 2,
-    ticket_id: 2,
-    message: '您的工单已派单',
-    read: false,
-    created_at: '2026-08-03T02:30:00Z',
-  },
-]
-
-/**
- * 拉取未读站内通知（通知预览条数据源，按时间倒序）。
- * TODO(backend)：补 GET /api/notifications（Customer Bearer）后替换为真实 fetch。
- */
-export async function listUnreadNotifications(_token: string): Promise<TicketNotification[]> {
-  return [...MOCK_NOTIFICATIONS]
+/** 拉取当前客户站内通知列表（US-14 通知预览条数据源，后端按时间倒序）。 */
+export async function listUnreadNotifications(token: string): Promise<TicketNotification[]> {
+  const response = await expectOk(
+    await fetch('/api/notifications', { headers: authHeaders(token) }),
+  )
+  return (await response.json()) as TicketNotification[]
 }
