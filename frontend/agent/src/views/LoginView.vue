@@ -13,7 +13,8 @@ import { useAuthStore } from '../stores/auth'
  * Modal 弹层卡片（品牌 + 工号 + 密码明文切换 + 登录主按钮）。
  * 四态：default（聚焦 `shadow-focus` 环）/ error（`semantic-error 100` 环 + 「工号或密码错误」）/
  *       disabled（工号或密码为空主按钮禁用）/ loading（提交中禁用 + 白 spinner + 「登录中…」）。
- * 登录成功进入工作台待接入页（/queue）（US-19）。
+ * 登录成功进入工作台待接入页（/queue）（US-19）；若带 redirect 参数（未登录被守卫
+ * 拦截重定向而来），登录后跳回登录前想访问的目标路由（issue #58 验收标准 3）。
  */
 const employeeId = ref('')
 const password = ref('')
@@ -28,7 +29,13 @@ const auth = useAuthStore()
 const submitting = ref(false)
 const loginError = ref('')
 
-/** 登录（US-19）：POST /agents/login → 写入凭证 → 进入工作台待接入页 /queue。 */
+/** 登录成功跳转目标：redirect 查询参数（站内路径）优先，缺省回工作台待接入页 /queue。 */
+function loginTarget(): string {
+  const raw = router.currentRoute.value.query.redirect
+  return typeof raw === 'string' && raw.startsWith('/') ? raw : '/queue'
+}
+
+/** 登录（US-19）：POST /agents/login → 写入凭证 → 跳回登录前目标路由（缺省 /queue）。 */
 async function handleSubmit() {
   if (!formValid.value || submitting.value) return
   submitting.value = true
@@ -39,7 +46,7 @@ async function handleSubmit() {
       { accessToken: tokens.access_token, refreshToken: tokens.refresh_token },
       employeeId.value,
     )
-    await router.push('/queue')
+    await router.push(loginTarget())
   } catch (err) {
     loginError.value = err instanceof AgentLoginError ? err.message : '工号或密码错误'
   } finally {

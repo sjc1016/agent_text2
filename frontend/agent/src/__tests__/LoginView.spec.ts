@@ -8,10 +8,16 @@ import ElementPlus from 'element-plus'
 import LoginView from '../views/LoginView.vue'
 import { useAuthStore } from '../stores/auth'
 
-/** 占位视图：/queue 路由目标（登录成功落点 = 工作台待接入页）。 */
+/** 占位视图：/queue 路由目标（登录成功缺省落点 = 工作台待接入页）。 */
 const QueueStub = defineComponent({
   name: 'QueueStub',
   template: '<div data-testid="queue-stub">queue</div>',
+})
+
+/** 占位视图：redirect 目标（未登录被守卫拦截重定向场景，issue #58 验收标准 3）。 */
+const TicketsStub = defineComponent({
+  name: 'TicketsStub',
+  template: '<div data-testid="tickets-stub">tickets</div>',
 })
 
 function makeRouter(): Router {
@@ -20,17 +26,18 @@ function makeRouter(): Router {
     routes: [
       { path: '/login', component: LoginView },
       { path: '/queue', component: QueueStub },
+      { path: '/tickets', component: TicketsStub },
     ],
   })
 }
 
 let pinia: Pinia
 
-async function mountLogin() {
+async function mountLogin(initialPath = '/login') {
   pinia = createPinia()
   setActivePinia(pinia)
   const router = makeRouter()
-  await router.push('/login')
+  await router.push(initialPath)
   await router.isReady()
   const wrapper = mount(LoginView, { global: { plugins: [router, pinia, ElementPlus] } })
   return { wrapper, router }
@@ -165,6 +172,43 @@ describe('LoginView — 登录成功进入工作台（US-19）', () => {
     const persisted = JSON.parse(localStorage.getItem('agent.auth') ?? '{}')
     expect(persisted.accessToken).toBe('access-t')
     expect(persisted.employeeId).toBe('1001')
+  })
+})
+
+describe('LoginView — 登录成功后跳回目标路由（issue #58 验收标准 3）', () => {
+  it('携带 redirect=/tickets 登录成功 → 跳 /tickets（而非缺省 /queue）', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        access_token: 'access-t',
+        refresh_token: 'refresh-t',
+        token_type: 'bearer',
+      }),
+    })
+    const { wrapper, router } = await mountLogin('/login?redirect=/tickets')
+    await fillForm(wrapper, '1001', 'agent123')
+    await wrapper.find('[data-testid="login-form"]').trigger('submit')
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/tickets')
+    expect(useAuthStore().isAuthenticated).toBe(true)
+  })
+
+  it('redirect 为外部/非法值（如 http://evil）→ 回退工作台首页 /queue', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        access_token: 'access-t',
+        refresh_token: 'refresh-t',
+        token_type: 'bearer',
+      }),
+    })
+    const { wrapper, router } = await mountLogin('/login?redirect=http%3A%2F%2Fevil.com')
+    await fillForm(wrapper, '1001', 'agent123')
+    await wrapper.find('[data-testid="login-form"]').trigger('submit')
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/queue')
   })
 })
 

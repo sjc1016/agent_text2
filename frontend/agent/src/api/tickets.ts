@@ -15,6 +15,8 @@
  * 详情页 audit_logs/timeline 因此仍为前端展示层推导，非后端契约。
  */
 
+import { dispatchAuthExpired, isAgentCredentialExpired } from '../stores/auth'
+
 /** 坐席视角工单（镜像后端 AgentTicketOut：TicketOut 字段 + 脱敏号码 + 技能组）。 */
 export interface AgentTicket {
   id: number
@@ -162,6 +164,13 @@ function authHeaders(token: string): Record<string, string> {
 
 /** 非 2xx 响应收敛为 Error（detail 文案优先）。 */
 async function expectOk(response: Response): Promise<Response> {
+  if (isAgentCredentialExpired(response)) {
+    // 坐席凭证无效/过期（auth dependency 401 + WWW-Authenticate: Bearer）：
+    // 派发凭证失效事件，由守卫监听清除凭证并跳回登录页（issue #58 验收标准 4）。
+    // 注意：办理执行服务密码失败同样返回 401 但不带 WWW-Authenticate（业务错误，
+    // 由调用方 Modal 展示），此处不触发跳登录。
+    dispatchAuthExpired()
+  }
   if (!response.ok) {
     let detail = '请求失败'
     try {

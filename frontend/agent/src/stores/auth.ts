@@ -16,6 +16,26 @@ export interface AuthTokens {
 /** localStorage 键：坐席认证凭证。 */
 const AUTH_STORAGE_KEY = 'agent.auth'
 
+/**
+ * 凭证失效事件名（issue #58 验收标准 4）：API 层检测到坐席凭证无效/过期（后端 401）时
+ * 派发，由路由守卫侧监听统一清除凭证并跳回登录页 —— 与未登录拦截复用同一跳转逻辑。
+ */
+export const AUTH_EXPIRED_EVENT = 'agent:auth-expired'
+
+/** 派发凭证失效事件（window 同步事件，监听侧即刻处理）。 */
+export function dispatchAuthExpired(): void {
+  window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
+}
+
+/**
+ * 坐席凭证 401 判定：后端 auth dependency（get_current_agent）凭证校验失败返回 401 且
+ * 携带 `WWW-Authenticate: Bearer`，区别于业务 401（办理执行服务密码失败 / 登录失败）。
+ */
+export function isAgentCredentialExpired(response: Response): boolean {
+  if (response.status !== 401) return false
+  return (response.headers.get('WWW-Authenticate') ?? '').toLowerCase().includes('bearer')
+}
+
 interface PersistedAuth {
   accessToken: string
   refreshToken: string
@@ -71,6 +91,17 @@ export const useAuthStore = defineStore('auth', {
           employeeId: this.employeeId,
         }),
       )
+    },
+
+    /**
+     * 清除坐席凭证（凭证失效 401 时由守卫监听调用；登出功能 #60 亦可复用）：
+     * 回未登录态并清理 localStorage。
+     */
+    clearAuth() {
+      this.accessToken = ''
+      this.refreshToken = ''
+      this.employeeId = ''
+      localStorage.removeItem(AUTH_STORAGE_KEY)
     },
   },
 })
