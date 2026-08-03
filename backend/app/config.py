@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     # 办理执行复核凭证（CONTEXT › 办理执行复核）：短期，仅用于 Ticket 执行一步
     execute_token_expire_minutes: int = 10
 
+    # 会话超时（分钟，CONTEXT › 会话片段：超时断开，重新交互开启新 Session）
+    session_timeout_minutes: int = 30
+
     # bcrypt（ADR 0004：成本 12）
     bcrypt_cost: int = 12
 
