@@ -14,10 +14,14 @@ LangChain 集成：
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any
 
+import httpx
+import structlog
 from langchain_core.language_models.fake_chat_models import (
     FakeMessagesListChatModel,
 )
@@ -28,6 +32,8 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
+
+logger = structlog.get_logger(__name__)
 
 
 class ChatRole(str, Enum):
@@ -114,3 +120,184 @@ class FakeListLLM(BaseLLM):
                 content = str(content)
             # 字符级分段：模拟真实流式输出（每片 1-2 字符，保证多 token 测试）
             yield from content
+
+
+#: 追加到请求首部的 tool 调用协议说明（v1 简化协议 <|tool_call:name:json|>，
+#: 与 app.agent.tools.parse_tool_call 对应）。独立注入请求而非改 SYSTEM_PROMPT，
+#: 避免影响现有 FakeListLLM 行为测试。
+_TOOL_PROTOCOL_PROMPT = (
+    "工具调用协议：当用户请求涉及查询或办理业务（话费、套餐、用量、合约、增值业务、"
+    "套餐变更、增值订退、停机保号、充值缴费）或查询公开信息（套餐介绍、营业厅、覆盖）时，"
+    "你必须只输出一个工具调用标记且不输出任何其他文字，格式为：\n"
+    '<|tool_call:工具名:{"参数名": "值"}|>\n'
+    "参数必须使用双引号 JSON 格式；根据用户意图选择最合适的工具。"
+    "其余情况正常回复用户。"
+)
+
+
+def _to_openai_message(msg: ChatMessage) -> dict[str, str]:
+    """领域 ChatMessage → OpenAI 兼容 API 消息（v1 简化协议）。
+
+    TOOL role 承载工具执行结果：OpenAI 原生 tool role 必须紧跟带 tool_calls 的
+    assistant 消息（本协议未使用原生 tool 调用），故映射为 user role 并前缀标记，
+    保证模型可见工具结果上下文。
+    """
+    if msg.role is ChatRole.TOOL:
+        tool_label = f"[工具 {msg.tool_name} 结果] " if msg.tool_name else "[工具结果] "
+        return {"role": "user", "content": f"{tool_label}{msg.content}"}
+    role = {
+        ChatRole.SYSTEM: "system",
+        ChatRole.USER: "user",
+        ChatRole.ASSISTANT: "assistant",
+    }[msg.role]
+    return {"role": role, "content": msg.content}
+
+
+class OpenAICompatLLM(BaseLLM):
+    """OpenAI 兼容 API 的真实 LLM（NVIDIA NIM / OpenAI / 兼容网关）。
+
+    与 FakeListLLM 实现同一 BaseLLM 接口（B3 seam，接口不变仅换 provider）：
+      - invoke：POST /chat/completions（非流式）返回完整文本
+      - stream：POST stream=true，逐 SSE delta 产出 content 片段
+    BaseLLM.stream 为同步迭代器（v1 单进程部署语义与 FakeListLLM 一致），
+    内部使用同步 httpx 客户端。
+
+    协议说明：请求头部注入 _TOOL_PROTOCOL_PROMPT（system），工具清单经
+    tool_descriptions 由调用方（ws/routes 从 ToolRegistry.list_tools 生成）注入。
+    """
+
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        api_key: str,
+        model: str,
+        temperature: float = 0.7,
+        timeout_seconds: float = 60.0,
+        tool_descriptions: str = "",
+        http_client: httpx.Client | None = None,
+    ) -> None:
+        self._base_url = base_url.rstrip("/")
+        self._api_key = api_key
+        self._model = model
+        self._temperature = temperature
+        self._tool_descriptions = tool_descriptions
+        self._client = http_client or httpx.Client(timeout=timeout_seconds)
+
+    # ------------------------------------------------------------------
+    # 内部：请求组装
+    # ------------------------------------------------------------------
+    def _chat_url(self) -> str:
+        # 约定 base_url 指向 API 根（如 https://integrate.api.nvidia.com/v1）或
+        # 已含完整路径（如 https://apihub.agnes-ai.com/v1/chat/completions）
+        base = self._base_url.rstrip("/")
+        if base.endswith("/chat/completions"):
+            return base
+        return f"{base}/chat/completions"
+
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+
+    def _payload(self, messages: list[ChatMessage], *, stream: bool) -> dict[str, Any]:
+        protocol: list[dict[str, str]] = [{"role": "system", "content": _TOOL_PROTOCOL_PROMPT}]
+        if self._tool_descriptions:
+            protocol.append({"role": "system", "content": f"可用工具：\n{self._tool_descriptions}"})
+        return {
+            "model": self._model,
+            "messages": protocol + [_to_openai_message(m) for m in messages],
+            "temperature": self._temperature,
+            "stream": stream,
+        }
+
+    # ------------------------------------------------------------------
+    # BaseLLM 接口
+    # ------------------------------------------------------------------
+    def invoke(self, messages: list[ChatMessage]) -> str:
+        resp = self._client.post(
+            self._chat_url(),
+            headers=self._headers(),
+            json=self._payload(messages, stream=False),
+        )
+        if resp.status_code != 200:
+            raise RuntimeError(f"LLM API 调用失败（HTTP {resp.status_code}）：{resp.text[:200]}")
+        data = resp.json()
+        choices = data.get("choices") or []
+        if not choices:
+            return ""
+        return choices[0].get("message", {}).get("content", "") or ""
+
+    def stream(self, messages: list[ChatMessage]) -> Iterator[str]:
+        payload = self._payload(messages, stream=True)
+        with self._client.stream(
+            "POST", self._chat_url(), headers=self._headers(), json=payload
+        ) as resp:
+            if resp.status_code != 200:
+                body = resp.read()
+                raise RuntimeError(
+                    f"LLM API 流式调用失败（HTTP {resp.status_code}）：{body[:200]!r}"
+                )
+            for line in resp.iter_lines():
+                if not line or not line.startswith("data:"):
+                    continue
+                data = line[len("data:") :].strip()
+                if data == "[DONE]":
+                    break
+                chunk = json.loads(data)
+                choices = chunk.get("choices") or []
+                if not choices:
+                    continue
+                delta = choices[0].get("delta") or {}
+                content = delta.get("content")
+                if content:
+                    yield content
+
+
+class FailoverLLM(BaseLLM):
+    """LLM 主备自动切换：providers 依序尝试，当前 provider 抛错自动切下一个。
+
+    实现同一 BaseLLM 接口（B3 seam 不变）：
+      - invoke：按序调用，异常 → 切换下一个，全部失败抛最后一个异常
+      - stream：迭代当前 provider 输出；中途抛错（如 NVIDIA 529 过载）→
+        从下一个 provider 重新生成完整回复
+    全部 provider 失败时异常向上传播，由 AssistantService.chat() 兜底话术降级。
+    切换事件经 structlog 记录（llm_provider_failed），便于观测哪家不可用。
+    """
+
+    def __init__(self, providers: list[BaseLLM]) -> None:
+        if not providers:
+            raise ValueError("FailoverLLM.providers 不能为空")
+        self._providers = list(providers)
+
+    def invoke(self, messages: list[ChatMessage]) -> str:
+        last_exc: Exception | None = None
+        for provider in self._providers:
+            try:
+                return provider.invoke(messages)
+            except Exception as exc:  # noqa: BLE001 - 任一 provider 失败即切换
+                last_exc = exc
+                logger.warning(
+                    "llm_provider_failed",
+                    provider=type(provider).__name__,
+                    error=str(exc),
+                )
+        assert last_exc is not None
+        raise last_exc
+
+    def stream(self, messages: list[ChatMessage]) -> Iterator[str]:
+        last_exc: Exception | None = None
+        for provider in self._providers:
+            try:
+                yield from provider.stream(messages)
+                return
+            except Exception as exc:  # noqa: BLE001 - 流式中途失败切换下一个
+                last_exc = exc
+                logger.warning(
+                    "llm_provider_failed",
+                    provider=type(provider).__name__,
+                    error=str(exc),
+                )
+        assert last_exc is not None
+        raise last_exc

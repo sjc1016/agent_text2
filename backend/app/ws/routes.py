@@ -33,6 +33,7 @@ import jwt
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
+from app.agent.llm import BaseLLM
 from app.agent.service import AssistantService
 from app.agent.tools import ToolCall, ToolResult
 from app.auth.security import decode_token, get_agent_by_id, get_customer_by_id
@@ -67,26 +68,54 @@ DbSession = Annotated[Session, Depends(get_db)]
 
 
 def _build_default_assistant_service() -> AssistantService:
-    """构建 v1 默认助理服务（FakeListLLM 占位 + 全量工具注册）。
+    """构建 v1 默认助理服务（配置了 LLM API key 时用真实模型，否则 FakeListLLM 占位）。
 
-    PRD 依据：B3（issue #9）LLM 抽象以 FakeListLLM 为 CI 确定性 seam；v1 未配置
-    真实 LLM provider（真实接入时替换为 LangChain chat model，接口不变）。注册
-    通用咨询 / 查询 / 办理三类 tool，供对话流端到端调用（#24 集成切片，US-1）。
+    PRD 依据：B3（issue #9）LLM 抽象以 FakeListLLM 为 CI 确定性 seam；真实接入时
+    通过 Settings（.env）注入 OpenAI 兼容 API（默认 NVIDIA NIM），BaseLLM 接口不变。
+    配置 failover key 时以 FailoverLLM 主备自动切换（主失败如 529 过载 → 切备）。
+    注册通用咨询 / 查询 / 办理三类 tool，供对话流端到端调用（#24 集成切片，US-1）。
+    工具清单注入各 provider 的协议提示，供其选择工具。
     """
     from app.agent.general_tools import register_general_info_tools
     from app.agent.inquiry_tools import register_inquiry_tools
-    from app.agent.llm import FakeListLLM
+    from app.agent.llm import FailoverLLM, FakeListLLM, OpenAICompatLLM
     from app.agent.tools import ToolRegistry
+    from app.config import get_settings
     from app.transaction.tools import register_transaction_tools
 
     registry = ToolRegistry()
     register_general_info_tools(registry)
     register_inquiry_tools(registry)
     register_transaction_tools(registry)
-    return AssistantService(
-        llm=FakeListLLM(responses=["您好，我是电信客服助理，请问有什么可以帮您？"]),
-        tool_registry=registry,
-    )
+
+    settings = get_settings()
+    if not settings.llm_api_key:
+        llm: BaseLLM = FakeListLLM(responses=["您好，我是电信客服助理，请问有什么可以帮您？"])
+    else:
+        tool_descriptions = "\n".join(f"- {t.name}: {t.description}" for t in registry.list_tools())
+        providers: list[BaseLLM] = [
+            OpenAICompatLLM(
+                base_url=settings.llm_base_url,
+                api_key=settings.llm_api_key,
+                model=settings.llm_model,
+                temperature=settings.llm_temperature,
+                timeout_seconds=settings.llm_timeout_seconds,
+                tool_descriptions=tool_descriptions,
+            )
+        ]
+        if settings.llm_failover_api_key:
+            providers.append(
+                OpenAICompatLLM(
+                    base_url=settings.llm_failover_base_url,
+                    api_key=settings.llm_failover_api_key,
+                    model=settings.llm_failover_model,
+                    temperature=settings.llm_temperature,
+                    timeout_seconds=settings.llm_failover_timeout_seconds,
+                    tool_descriptions=tool_descriptions,
+                )
+            )
+        llm = providers[0] if len(providers) == 1 else FailoverLLM(providers=providers)
+    return AssistantService(llm=llm, tool_registry=registry)
 
 
 _assistant_service: AssistantService | None = None

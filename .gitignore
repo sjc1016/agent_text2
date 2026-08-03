@@ -20,6 +20,9 @@ __pycache__/
 venv/
 env/
 
+# 环境变量（敏感 key 不入仓库）
+.env
+
 # Node
 node_modules/
 npm-debug.log*
