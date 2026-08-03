@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import ElementPlus from 'element-plus'
 
 import { routes } from '../router'
 
@@ -10,7 +11,10 @@ async function mountRoute(path: string) {
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push(path)
   await router.isReady()
-  const wrapper = mount({ template: '<router-view />' }, { global: { plugins: [router] } })
+  const wrapper = mount(
+    { template: '<router-view />' },
+    { global: { plugins: [router, ElementPlus] } },
+  )
   return { wrapper, router }
 }
 
