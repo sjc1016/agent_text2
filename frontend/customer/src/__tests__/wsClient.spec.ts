@@ -165,4 +165,41 @@ describe('ChatWsClient — WS 鉴权与事件收发（#24）', () => {
     vi.advanceTimersByTime(50)
     expect(MockWebSocket.instances).toHaveLength(2)
   })
+
+  it('close 4401（access token 失效）触发 onAuthRejected 回调（issue #65 自动刷新）', () => {
+    const onAuthRejected = vi.fn()
+    const client = new ChatWsClient({
+      getToken: () => 'at',
+      onEvent: () => {},
+      onBrokenChange: () => {},
+      reconnectDelayMs: 50,
+      onAuthRejected,
+    })
+    client.connect()
+    acceptLast()
+
+    MockWebSocket.instances[0].close(4401)
+
+    expect(onAuthRejected).toHaveBeenCalledTimes(1)
+    // 刷新后仍走重连（store 写回新 token，重连 getToken 取新值）
+    vi.advanceTimersByTime(50)
+    expect(MockWebSocket.instances).toHaveLength(2)
+  })
+
+  it('普通断线（非 4401）不触发 onAuthRejected（仅凭证过期才刷新）', () => {
+    const onAuthRejected = vi.fn()
+    const client = new ChatWsClient({
+      getToken: () => 'at',
+      onEvent: () => {},
+      onBrokenChange: () => {},
+      reconnectDelayMs: 50,
+      onAuthRejected,
+    })
+    client.connect()
+    acceptLast()
+
+    MockWebSocket.instances[0].close(1006)
+
+    expect(onAuthRejected).not.toHaveBeenCalled()
+  })
 })

@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import { useChatStore } from '../stores/chat'
 import { useSessionStore } from '../stores/session'
+import { useUiStore } from '../stores/ui'
 import type { WsEvent } from 'shared/events'
 
 /**
@@ -300,5 +301,78 @@ describe('空状态问候（#24）', () => {
       data: { id: 1, conversation_id: 7, source: 'user', content: 'hi', created_at: 't' },
     })
     expect(store.showGreeting).toBe(false)
+  })
+})
+
+describe('issue #65：会话未创建 / 凭证过期', () => {
+  it('sendMessage 在 conversationId 为 null 时给出错误态提示（不再静默吞掉）', async () => {
+    makeAuthenticated()
+    const store = useChatStore()
+    // 不 init：会话未创建（如建会话失败）
+    store.sendMessage('查话费')
+
+    expect(store.failedContent).toBe('查话费')
+    expect(store.showGreeting).toBe(false)
+    expect(sendMessageMock).not.toHaveBeenCalled()
+  })
+
+  it('retrySend 在会话未创建时先建会话再发送（重发不丢消息）', async () => {
+    makeAuthenticated()
+    const store = useChatStore()
+    store.sendMessage('查话费')
+    expect(store.failedContent).toBe('查话费')
+
+    sendMessageMock.mockReturnValue(true)
+    await store.retrySend()
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/conversations', expect.anything())
+    expect(sendMessageMock).toHaveBeenCalledWith(7, '查话费')
+    expect(store.failedContent).toBeNull()
+  })
+
+  it('建会话 401（access 过期，带 WWW-Authenticate）→ 自动刷新后重试建会话成功', async () => {
+    makeAuthenticated()
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        headers: { get: () => 'Bearer' },
+        json: async () => ({ detail: '未认证' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ access_token: 'fresh' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 7,
+          customer_id: 9,
+          status: 'authenticated',
+          created_at: '2026-08-03T00:00:00Z',
+        }),
+      })
+
+    const store = useChatStore()
+    await store.init()
+
+    expect(store.conversationId).toBe(7)
+    expect(useSessionStore().accessToken).toBe('fresh')
+    expect(connectMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('logout：关闭 WS（停止重连）+ 清空对话流 + 断线条复位', async () => {
+    makeAuthenticated()
+    const store = useChatStore()
+    await store.init()
+    useUiStore().setWsBroken(true)
+
+    store.logout()
+
+    // 关闭 WS（含上一测试遗留 client 在 connectWs 时被关，故至少一次）
+    expect(closeMock).toHaveBeenCalled()
+    expect(store.conversationId).toBeNull()
+    expect(store.messages).toHaveLength(0)
+    expect(useUiStore().wsBroken).toBe(false)
   })
 })

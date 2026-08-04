@@ -47,6 +47,48 @@
         }
       }
     },
+    "/auth/refresh": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Refresh",
+        "description": "用 refresh token（7d，type=refresh）换发新 access token（issue #65）。\n\n前端在受保护端点收到凭证 401（WWW-Authenticate: Bearer）时调用本端点：\nrefresh token 有效 → 颁发新 access token（原 refresh token 继续有效，不轮换，\n保持 v1 无状态简单语义）；无效/过期/类型不符/主体不存在 → 401，前端应\n清除凭证回访客态（refresh 失败即登录过期）。",
+        "operationId": "refresh_auth_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/me": {
       "get": {
         "tags": [
@@ -3021,6 +3063,39 @@
         ],
         "title": "RechargeRequest",
         "description": "发起充值缴费（US-11）。"
+      },
+      "RefreshRequest": {
+        "properties": {
+          "refresh_token": {
+            "type": "string",
+            "title": "Refresh Token",
+            "description": "7 天 refresh token（登录颁发，type=refresh）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "refresh_token"
+        ],
+        "title": "RefreshRequest"
+      },
+      "RefreshResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "default": "bearer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token"
+        ],
+        "title": "RefreshResponse",
+        "description": "/auth/refresh 响应：校验 refresh token 通过后颁发新 access token。"
       },
       "SuspendHoldRequest": {
         "properties": {

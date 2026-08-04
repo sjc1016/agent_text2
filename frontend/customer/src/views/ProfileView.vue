@@ -48,7 +48,7 @@ function openHistory(conversationId: number) {
 /** 退出登录（US-17）：清除认证与会话数据，返回访客态。 */
 function logout() {
   session.logout()
-  chat.reset()
+  chat.logout()
 }
 </script>
 

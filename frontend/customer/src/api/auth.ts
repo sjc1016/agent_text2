@@ -4,7 +4,11 @@
  * 基址 `/api`：ADR 0006 / deploy/nginx.conf 反代契约（前端一律 `/api/...` → nginx → 后端）。
  * B1 契约：POST /auth/login `{phone, service_password}` →
  *   200 `{access_token, refresh_token, token_type}` | 401 `{detail: "手机号或服务密码错误"}`。
+ * 受保护请求（reauth）统一走 api/http.ts（issue #65）：401 + WWW-Authenticate →
+ *   自动刷新 access token 重试；业务 401（服务密码错误，无 WWW-Authenticate）原样抛错。
  */
+
+import { authedJson } from './http'
 
 export interface LoginResponse {
   access_token: string
@@ -54,25 +58,13 @@ export interface ReauthResponse {
 /**
  * 办理执行复核（US-12）：再次校验服务密码 → 颁发短期 execute_token。
  * 补偿控制（CONTEXT › 办理执行复核）：复核通过后才能凭 execute_token 触发办理执行。
- * 失败抛 AuthError（后端 401「服务密码错误」→ 复核 Modal 错误文案）。
+ * 失败抛 HttpError（后端 401「服务密码错误」→ 复核 Modal 错误文案）。
+ * 走 authedJson：access 过期时自动刷新重试（#65），业务 401（密码错）原样抛错。
  */
 export async function reauth(token: string, servicePassword: string): Promise<ReauthResponse> {
-  const response = await fetch('/api/auth/reauth', {
+  return authedJson<ReauthResponse>(token, '/api/auth/reauth', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ service_password: servicePassword }),
   })
-
-  if (!response.ok) {
-    let message = '服务密码错误'
-    try {
-      const body = (await response.json()) as { detail?: unknown }
-      if (typeof body.detail === 'string') message = body.detail
-    } catch {
-      // 非 JSON 错误体：沿用默认文案
-    }
-    throw new AuthError(message)
-  }
-
-  return (await response.json()) as ReauthResponse
 }
