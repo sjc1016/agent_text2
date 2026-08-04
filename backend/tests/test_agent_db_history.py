@@ -34,9 +34,10 @@ class _HistoryInspectingLLM(BaseLLM):
         self.seen_histories = seen_histories
         self.response = response
 
-    def stream(self, messages):
+    async def stream(self, messages):
         self.seen_histories.append([ChatMessage(role=m.role, content=m.content) for m in messages])
-        yield from self.response
+        for ch in self.response:
+            yield ch
 
 
 def _seed_customer_and_conversation(db: Session) -> tuple[Customer, Conversation]:

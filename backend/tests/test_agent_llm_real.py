@@ -8,10 +8,14 @@ PRD 依据：B3（issue #9）BaseLLM seam——真实 provider 与 FakeListLLM �
   - TOOL role 消息翻译为 user role（工具结果前缀标记）
   - 工具清单 tool_descriptions 注入 system 消息
   - 非 200 状态抛错（错误对调用方可见而非静默空流）
+
+issue #67：BaseLLM 接口已异步化（httpx.AsyncClient），测试全部走 async 路径，
+并新增「长耗时 LLM 调用不阻塞并发任务」的集成断言。
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import httpx
@@ -27,10 +31,10 @@ class _AlwaysFailLLM(BaseLLM):
     def __init__(self, name: str) -> None:
         self._name = name
 
-    def invoke(self, messages: list[ChatMessage]) -> str:
+    async def invoke(self, messages: list[ChatMessage]) -> str:
         raise RuntimeError(f"{self._name} failed")
 
-    def stream(self, messages: list[ChatMessage]):
+    async def stream(self, messages: list[ChatMessage]):
         raise RuntimeError(f"{self._name} failed")
         yield  # pragma: no cover - 不可达
 
@@ -42,19 +46,33 @@ class _FixedLLM(BaseLLM):
         self._name = name
         self._text = text
 
-    def invoke(self, messages: list[ChatMessage]) -> str:
+    async def invoke(self, messages: list[ChatMessage]) -> str:
         return self._text
 
-    def stream(self, messages: list[ChatMessage]):
-        yield from self._text
+    async def stream(self, messages: list[ChatMessage]):
+        for ch in self._text:
+            yield ch
 
 
 class _RaisingLLM(BaseLLM):
     """LLM 流式调用即抛错（模拟 provider 过载 / 超时）。"""
 
-    def stream(self, messages: list[ChatMessage]):
+    async def stream(self, messages: list[ChatMessage]):
         raise RuntimeError("HTTP 529 Service temporarily overloaded")
         yield  # pragma: no cover - 不可达
+
+
+class _SlowStreamLLM(BaseLLM):
+    """LLM 长耗时流式（每 token 睡眠 50ms），模拟真实网络调用。"""
+
+    def __init__(self, tokens: list[str], delay: float = 0.05) -> None:
+        self._tokens = tokens
+        self._delay = delay
+
+    async def stream(self, messages: list[ChatMessage]):
+        for tok in self._tokens:
+            await asyncio.sleep(self._delay)
+            yield tok
 
 
 def _make_llm(handler) -> OpenAICompatLLM:
@@ -63,11 +81,12 @@ def _make_llm(handler) -> OpenAICompatLLM:
         base_url="https://example.com/v1",
         api_key="test-key",
         model="test-model",
-        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
     )
 
 
-def test_invoke_builds_request_and_returns_content():
+@pytest.mark.anyio
+async def test_invoke_builds_request_and_returns_content():
     """invoke：请求 URL/头/body 正确，choices[0].message.content 作为返回。"""
     captured: dict = {}
 
@@ -81,7 +100,7 @@ def test_invoke_builds_request_and_returns_content():
         )
 
     llm = _make_llm(handler)
-    result = llm.invoke([ChatMessage(role=ChatRole.USER, content="查一下话费")])
+    result = await llm.invoke([ChatMessage(role=ChatRole.USER, content="查一下话费")])
 
     assert captured["url"] == "https://example.com/v1/chat/completions"
     assert captured["auth"] == "Bearer test-key"
@@ -96,7 +115,8 @@ def test_invoke_builds_request_and_returns_content():
     assert result == "你好，电信客服。"
 
 
-def test_stream_yields_sse_deltas():
+@pytest.mark.anyio
+async def test_stream_yields_sse_deltas():
     """stream：SSE `data:` 行逐段产出 delta.content，遇 [DONE] 终止。"""
     sse = (
         'data: {"choices":[{"delta":{"role":"assistant","content":"你"}}]}\n\n'
@@ -110,11 +130,12 @@ def test_stream_yields_sse_deltas():
         return httpx.Response(200, text=sse)
 
     llm = _make_llm(handler)
-    tokens = list(llm.stream([ChatMessage(role=ChatRole.USER, content="hi")]))
+    tokens = [t async for t in llm.stream([ChatMessage(role=ChatRole.USER, content="hi")])]
     assert tokens == ["你", "好"]
 
 
-def test_tool_message_translated_to_user_role_with_label():
+@pytest.mark.anyio
+async def test_tool_message_translated_to_user_role_with_label():
     """TOOL role（工具执行结果）→ user role 消息，前缀标记工具名（v1 协议）。"""
     captured: dict = {}
 
@@ -132,7 +153,7 @@ def test_tool_message_translated_to_user_role_with_label():
             tool_name="get_balance",
         ),
     ]
-    llm.invoke(history)
+    await llm.invoke(history)
 
     assert captured["body"]["messages"][-1] == {
         "role": "user",
@@ -140,7 +161,8 @@ def test_tool_message_translated_to_user_role_with_label():
     }
 
 
-def test_tool_descriptions_injected_as_system_message():
+@pytest.mark.anyio
+async def test_tool_descriptions_injected_as_system_message():
     """tool_descriptions（工具清单）注入请求体 system 消息，供模型选工具。"""
     captured: dict = {}
 
@@ -153,15 +175,16 @@ def test_tool_descriptions_injected_as_system_message():
         api_key="k",
         model="m",
         tool_descriptions="- get_balance: 查询话费余额",
-        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
     )
-    llm.invoke([ChatMessage(role=ChatRole.USER, content="hi")])
+    await llm.invoke([ChatMessage(role=ChatRole.USER, content="hi")])
 
     system_contents = [m["content"] for m in captured["body"]["messages"] if m["role"] == "system"]
     assert any("可用工具" in c and "get_balance" in c for c in system_contents)
 
 
-def test_stream_raises_on_non_200():
+@pytest.mark.anyio
+async def test_stream_raises_on_non_200():
     """非 200：流式调用抛 RuntimeError（错误可见，而非静默空流）。"""
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -169,7 +192,8 @@ def test_stream_raises_on_non_200():
 
     llm = _make_llm(handler)
     try:
-        list(llm.stream([ChatMessage(role=ChatRole.USER, content="hi")]))
+        async for _ in llm.stream([ChatMessage(role=ChatRole.USER, content="hi")]):
+            pass
         raise AssertionError("应抛出 RuntimeError")
     except RuntimeError as e:
         assert "HTTP 401" in str(e)
@@ -190,38 +214,67 @@ async def test_chat_falls_back_when_llm_stream_raises():
     assert history[-1].content == "抱歉，当前服务繁忙，请稍后重试。"
 
 
+@pytest.mark.anyio
+async def test_slow_llm_stream_does_not_block_concurrent_task():
+    """issue #67 集成断言：长耗时 LLM 流式调用不阻塞事件循环。
+
+    并发调度一个 0.3s 定时任务：若 LLM 调用仍阻塞事件循环（同步 httpx 回归），
+    该任务会被拖到 LLM 结束后才完成；异步实现下它应在 LLM 流式期间就绪。
+    """
+    svc = AssistantService(llm=_SlowStreamLLM(tokens=["你", "好"], delay=0.15))
+    timer_done = asyncio.Event()
+
+    async def timer() -> None:
+        await asyncio.sleep(0.05)
+        timer_done.set()
+
+    timer_task = asyncio.create_task(timer())
+    tokens: list[str] = []
+    async for tok in svc.chat(conversation_id=1, user_message="您好"):
+        tokens.append(tok)
+    await timer_task
+
+    assert "".join(tokens) == "你好"
+    # 定时任务在 LLM 流式（0.3s）完成前已触发 → 事件循环未被阻塞
+    assert timer_done.is_set()
+
+
 # ---------------------------------------------------------------------------
 # FailoverLLM：主备自动切换
 # ---------------------------------------------------------------------------
 
 
-def test_failover_switches_to_backup_when_primary_fails():
+@pytest.mark.anyio
+async def test_failover_switches_to_backup_when_primary_fails():
     """主 provider 失败 → invoke / stream 均自动切换到备 provider。"""
     llm = FailoverLLM(providers=[_AlwaysFailLLM("primary"), _FixedLLM("backup", "备用回复")])
     messages = [ChatMessage(role=ChatRole.USER, content="查话费")]
 
-    assert llm.invoke(messages) == "备用回复"
-    assert "".join(llm.stream(messages)) == "备用回复"
+    assert await llm.invoke(messages) == "备用回复"
+    assert "".join([t async for t in llm.stream(messages)]) == "备用回复"
 
 
-def test_failover_uses_primary_when_healthy():
+@pytest.mark.anyio
+async def test_failover_uses_primary_when_healthy():
     """主 provider 正常 → 备 provider 不被调用。"""
     llm = FailoverLLM(providers=[_FixedLLM("primary", "主回复"), _AlwaysFailLLM("backup")])
     messages = [ChatMessage(role=ChatRole.USER, content="查话费")]
 
-    assert llm.invoke(messages) == "主回复"
-    assert "".join(llm.stream(messages)) == "主回复"
+    assert await llm.invoke(messages) == "主回复"
+    assert "".join([t async for t in llm.stream(messages)]) == "主回复"
 
 
-def test_failover_all_fail_raises_last_error():
+@pytest.mark.anyio
+async def test_failover_all_fail_raises_last_error():
     """全部 provider 失败 → 抛出最后一个异常（由 chat() 兜底话术降级）。"""
     llm = FailoverLLM(providers=[_AlwaysFailLLM("a"), _AlwaysFailLLM("b")])
     messages = [ChatMessage(role=ChatRole.USER, content="查话费")]
 
     with pytest.raises(RuntimeError, match="b failed"):
-        llm.invoke(messages)
+        await llm.invoke(messages)
     with pytest.raises(RuntimeError, match="b failed"):
-        list(llm.stream(messages))
+        async for _ in llm.stream(messages):
+            pass
 
 
 def test_failover_empty_providers_rejected():
@@ -230,7 +283,8 @@ def test_failover_empty_providers_rejected():
         FailoverLLM(providers=[])
 
 
-def test_invoke_with_full_path_base_url_does_not_duplicate_path():
+@pytest.mark.anyio
+async def test_invoke_with_full_path_base_url_does_not_duplicate_path():
     """base_url 已含 /chat/completions（如 agnes-ai）→ 不重复拼接路径。"""
     captured: dict = {}
 
@@ -242,9 +296,9 @@ def test_invoke_with_full_path_base_url_does_not_duplicate_path():
         base_url="https://apihub.agnes-ai.com/v1/chat/completions",
         api_key="k",
         model="m",
-        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
     )
-    llm.invoke([ChatMessage(role=ChatRole.USER, content="hi")])
+    await llm.invoke([ChatMessage(role=ChatRole.USER, content="hi")])
     assert captured["url"] == "https://apihub.agnes-ai.com/v1/chat/completions"
 
 

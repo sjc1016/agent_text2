@@ -97,10 +97,11 @@ class FakeToolCallingLLM(FakeListLLM):
       - 后续普通字符串 → tool 执行后 LLM 最终回复
     """
 
-    def stream(self, messages):
+    async def stream(self, messages):
         # 找到最后一条消息；若是 TOOL role，则跳过 cycling 直接取下一条响应
         # 简化实现：父类行为 + 循环 cursor 即可
-        return super().stream(messages)
+        async for token in super().stream(messages):
+            yield token
 
 
 class TestAssistantToolCalling:

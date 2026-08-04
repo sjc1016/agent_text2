@@ -237,9 +237,10 @@ def test_ws_chat_multiturn_preserves_history(ws_client, db, recv_ws):
     seen: list[list[ChatMessage]] = []
 
     class _HistoryInspectingLLM(BaseLLM):
-        def stream(self, messages):
+        async def stream(self, messages):
             seen.append([ChatMessage(role=m.role, content=m.content) for m in messages])
-            yield from "收到"
+            for ch in "收到":
+                yield ch
 
     _inject_assistant_service(AssistantService(llm=_HistoryInspectingLLM()))
 
