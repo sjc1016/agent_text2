@@ -14,6 +14,7 @@ LangChain 集成：
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -264,14 +265,17 @@ class OpenAICompatLLM(BaseLLM):
 
 
 class FailoverLLM(BaseLLM):
-    """LLM 主备自动切换：providers 依序尝试，当前 provider 抛错自动切下一个。
+    """LLM 并行竞速：所有 provider 同时请求，首个有效响应独占输出。
 
     实现同一 BaseLLM 接口（B3 seam 不变，异步语义同 #67）：
-      - invoke：按序调用，异常 → 切换下一个，全部失败抛最后一个异常
-      - stream：迭代当前 provider 输出；中途抛错（如 NVIDIA 529 过载）→
-        从下一个 provider 重新生成完整回复
+      - invoke：并行发起所有 provider 非流式请求，取首个成功结果，取消其余
+      - stream：并行发起所有 provider 流式请求，首个产出 token 的独占后续输出，
+        其余 provider 任务立即取消
     全部 provider 失败时异常向上传播，由 AssistantService.chat() 兜底话术降级。
     切换事件经 structlog 记录（llm_provider_failed），便于观测哪家不可用。
+
+    竞速优势：不再串行等待主 provider 超时后才切备——主备同时发起，客户只需
+    等待最快的那个 provider 响应，显著降低首 token 延迟。
     """
 
     def __init__(self, providers: list[BaseLLM]) -> None:
@@ -280,33 +284,100 @@ class FailoverLLM(BaseLLM):
         self._providers = list(providers)
 
     async def invoke(self, messages: list[ChatMessage]) -> str:
+        if len(self._providers) == 1:
+            return await self._providers[0].invoke(messages)
+
+        task_provider: dict[asyncio.Task[str], BaseLLM] = {
+            asyncio.ensure_future(p.invoke(messages)): p for p in self._providers
+        }
         last_exc: Exception | None = None
-        for provider in self._providers:
-            try:
-                return await provider.invoke(messages)
-            except Exception as exc:  # noqa: BLE001 - 任一 provider 失败即切换
-                last_exc = exc
-                logger.warning(
-                    "llm_provider_failed",
-                    provider=type(provider).__name__,
-                    error=str(exc),
-                )
-        assert last_exc is not None
-        raise last_exc
+        all_tasks = set(task_provider)
+
+        try:
+            pending: set[asyncio.Task[str]] = set(all_tasks)
+            while pending:
+                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    try:
+                        result = task.result()
+                    except Exception as exc:  # noqa: BLE001 - provider 失败等待其余
+                        last_exc = exc
+                        p = task_provider[task]
+                        logger.warning(
+                            "llm_provider_failed",
+                            provider=type(p).__name__,
+                            error=str(exc),
+                        )
+                        continue
+                    # 首个成功：取消其余任务
+                    for t in pending:
+                        t.cancel()
+                    return result
+            assert last_exc is not None
+            raise last_exc
+        finally:
+            for t in all_tasks:
+                if not t.done():
+                    t.cancel()
 
     async def stream(self, messages: list[ChatMessage]) -> AsyncIterator[str]:
-        last_exc: Exception | None = None
-        for provider in self._providers:
+        if len(self._providers) == 1:
+            async for token in self._providers[0].stream(messages):
+                yield token
+            return
+
+        async def _race_first(
+            provider: BaseLLM,
+        ) -> tuple[BaseLLM, AsyncIterator[str], str | None]:
+            """获取 provider 首个 token；空流返回 None。"""
+            gen = provider.stream(messages)
             try:
-                async for token in provider.stream(messages):
-                    yield token
-                return
-            except Exception as exc:  # noqa: BLE001 - 流式中途失败切换下一个
-                last_exc = exc
-                logger.warning(
-                    "llm_provider_failed",
-                    provider=type(provider).__name__,
-                    error=str(exc),
-                )
-        assert last_exc is not None
-        raise last_exc
+                first = await gen.__anext__()
+            except StopAsyncIteration:
+                return provider, gen, None
+            return provider, gen, first
+
+        task_provider: dict[
+            asyncio.Task[tuple[BaseLLM, AsyncIterator[str], str | None]], BaseLLM
+        ] = {asyncio.ensure_future(_race_first(p)): p for p in self._providers}
+        last_exc: Exception | None = None
+        all_tasks = set(task_provider)
+
+        try:
+            pending: set[asyncio.Task[tuple[BaseLLM, AsyncIterator[str], str | None]]] = set(
+                all_tasks
+            )
+            while pending:
+                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    try:
+                        provider, gen, first_token = task.result()
+                    except Exception as exc:  # noqa: BLE001 - provider 失败等待其余
+                        last_exc = exc
+                        p = task_provider[task]
+                        logger.warning(
+                            "llm_provider_failed",
+                            provider=type(p).__name__,
+                            error=str(exc),
+                        )
+                        continue
+
+                    if first_token is None:
+                        # provider 空流（无 token），等待其余
+                        continue
+
+                    # 首个有效 token！取消其余任务，独占此 provider 输出
+                    for t in pending:
+                        t.cancel()
+                    yield first_token
+                    async for token in gen:
+                        yield token
+                    return
+
+            # 所有 provider 均失败或空流
+            if last_exc is not None:
+                raise last_exc
+        finally:
+            for t in all_tasks:
+                if not t.done():
+                    t.cancel()

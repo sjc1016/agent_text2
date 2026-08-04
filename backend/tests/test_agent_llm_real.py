@@ -266,13 +266,17 @@ async def test_failover_uses_primary_when_healthy():
 
 @pytest.mark.anyio
 async def test_failover_all_fail_raises_last_error():
-    """全部 provider 失败 → 抛出最后一个异常（由 chat() 兜底话术降级）。"""
+    """全部 provider 失败 → 抛出一个 provider 的异常（由 chat() 兜底话术降级）。
+
+    并行竞速实现下各 provider 同时失败，最终抛出的异常取决于完成顺序，
+    不再保证是列表最后一个 provider（串行切换语义已变更）。
+    """
     llm = FailoverLLM(providers=[_AlwaysFailLLM("a"), _AlwaysFailLLM("b")])
     messages = [ChatMessage(role=ChatRole.USER, content="查话费")]
 
-    with pytest.raises(RuntimeError, match="b failed"):
+    with pytest.raises(RuntimeError, match="[ab] failed"):
         await llm.invoke(messages)
-    with pytest.raises(RuntimeError, match="b failed"):
+    with pytest.raises(RuntimeError, match="[ab] failed"):
         async for _ in llm.stream(messages):
             pass
 
