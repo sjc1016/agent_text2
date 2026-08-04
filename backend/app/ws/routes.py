@@ -309,8 +309,13 @@ async def ws_endpoint(
 
     try:
         while True:
-            raw = await websocket.RECEIVE_TEXT_TEST()
-            await _handle_inbound(websocket, db, identity, raw, assistant)
+            raw = await websocket.receive_text()
+            try:
+                await _handle_inbound(websocket, db, identity, raw, assistant)
+            except RuntimeError:
+                break
+            except Exception:
+                pass
     except WebSocketDisconnect:
         pass
     finally:

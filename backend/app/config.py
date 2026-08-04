@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     llm_api_key: str = ""  # 生产经 .env 注入（APP_LLM_API_KEY），不入仓库
     llm_model: str = "deepseek-ai/deepseek-v4-flash"
     llm_temperature: float = 0.7
-    llm_timeout_seconds: float = 60.0
+    llm_timeout_seconds: float = 15.0
 
     # 备 provider（自动切换）：base_url 可含 /v1 前缀或完整 /chat/completions 路径
     llm_failover_base_url: str = "https://apihub.agnes-ai.com/v1/chat/completions"
