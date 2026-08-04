@@ -15,7 +15,7 @@
 
 运行方式：
   cd backend
-  .venv\Scripts\python.exe scripts\verify_real_llm.py
+  .venv\\Scripts\\python.exe scripts\verify_real_llm.py
 """
 
 from __future__ import annotations
@@ -24,7 +24,6 @@ import asyncio
 import os
 import sys
 import time
-import traceback
 from pathlib import Path
 
 # 确保能找到 app 包
@@ -33,8 +32,8 @@ if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
 os.chdir(str(backend_dir))
 
-# 从 .env 读取配置（避免硬编码 key）
-from app.config import get_settings
+# 从 .env 读取配置（避免硬编码 key）；需在 sys.path 就绪后导入 app 包
+from app.config import get_settings  # noqa: E402
 
 _settings = get_settings()
 PRIMARY_BASE_URL = _settings.llm_base_url
@@ -56,19 +55,19 @@ class TestReport:
     def record(self, name: str, success: bool, detail: str = ""):
         self.results.append((name, success, detail))
         status = "PASS" if success else "FAIL"
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"  [{status}] {name}")
         if detail:
             for line in detail.split("\n"):
                 print(f"    {line}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
     def summary(self):
         total = len(self.results)
         passed = sum(1 for _, ok, _ in self.results if ok)
-        print(f"\n{'#'*60}")
+        print(f"\n{'#' * 60}")
         print(f"  联调验证结果: {passed}/{total} 通过")
-        print(f"{'#'*60}")
+        print(f"{'#' * 60}")
         for name, ok, detail in self.results:
             status = "PASS" if ok else "FAIL"
             short = detail.split("\n")[0][:60] if detail else ""
@@ -95,10 +94,12 @@ async def test_primary_invoke():
     )
     try:
         start = time.time()
-        result = await llm.invoke([
-            ChatMessage(role=ChatRole.SYSTEM, content="你是中国电信客服助理，请简短回复。"),
-            ChatMessage(role=ChatRole.USER, content="你好，请问有什么套餐推荐？"),
-        ])
+        result = await llm.invoke(
+            [
+                ChatMessage(role=ChatRole.SYSTEM, content="你是中国电信客服助理，请简短回复。"),
+                ChatMessage(role=ChatRole.USER, content="你好，请问有什么套餐推荐？"),
+            ]
+        )
         elapsed = time.time() - start
         success = bool(result) and len(result) > 5
         report.record(
@@ -126,10 +127,12 @@ async def test_primary_stream():
     try:
         start = time.time()
         tokens = []
-        async for token in llm.stream([
-            ChatMessage(role=ChatRole.SYSTEM, content="你是中国电信客服助理，请简短回复。"),
-            ChatMessage(role=ChatRole.USER, content="帮我查一下营业厅地址"),
-        ]):
+        async for token in llm.stream(
+            [
+                ChatMessage(role=ChatRole.SYSTEM, content="你是中国电信客服助理，请简短回复。"),
+                ChatMessage(role=ChatRole.USER, content="帮我查一下营业厅地址"),
+            ]
+        ):
             tokens.append(token)
         elapsed = time.time() - start
         full = "".join(tokens)
@@ -161,10 +164,12 @@ async def test_failover_invoke():
     )
     try:
         start = time.time()
-        result = await llm.invoke([
-            ChatMessage(role=ChatRole.SYSTEM, content="你是中国电信客服助理，请简短回复。"),
-            ChatMessage(role=ChatRole.USER, content="你好，请问有什么套餐推荐？"),
-        ])
+        result = await llm.invoke(
+            [
+                ChatMessage(role=ChatRole.SYSTEM, content="你是中国电信客服助理，请简短回复。"),
+                ChatMessage(role=ChatRole.USER, content="你好，请问有什么套餐推荐？"),
+            ]
+        )
         elapsed = time.time() - start
         success = bool(result) and len(result) > 5
         report.record(
@@ -192,10 +197,12 @@ async def test_failover_stream():
     try:
         start = time.time()
         tokens = []
-        async for token in llm.stream([
-            ChatMessage(role=ChatRole.SYSTEM, content="你是中国电信客服助理，请简短回复。"),
-            ChatMessage(role=ChatRole.USER, content="帮我查一下营业厅地址"),
-        ]):
+        async for token in llm.stream(
+            [
+                ChatMessage(role=ChatRole.SYSTEM, content="你是中国电信客服助理，请简短回复。"),
+                ChatMessage(role=ChatRole.USER, content="帮我查一下营业厅地址"),
+            ]
+        ):
             tokens.append(token)
         elapsed = time.time() - start
         full = "".join(tokens)
@@ -233,10 +240,12 @@ async def test_failover_switch():
     llm = FailoverLLM(providers=[primary, backup])
     try:
         start = time.time()
-        result = await llm.invoke([
-            ChatMessage(role=ChatRole.SYSTEM, content="你是中国电信客服助理，请简短回复。"),
-            ChatMessage(role=ChatRole.USER, content="你好"),
-        ])
+        result = await llm.invoke(
+            [
+                ChatMessage(role=ChatRole.SYSTEM, content="你是中国电信客服助理，请简短回复。"),
+                ChatMessage(role=ChatRole.USER, content="你好"),
+            ]
+        )
         elapsed = time.time() - start
         success = bool(result) and len(result) > 5
         report.record(
@@ -294,7 +303,7 @@ async def test_assistant_multiturn_primary():
             f"上下文记忆: {'OK' if context_ok else 'MISS'}",
         )
     except Exception as e:
-        report.record(f"场景6: AssistantService 多轮对话（主）", False, f"异常: {e}")
+        report.record("场景6: AssistantService 多轮对话（主）", False, f"异常: {e}")
     finally:
         await llm._client.aclose()
 
@@ -324,9 +333,11 @@ async def test_tool_call_primary():
         tool_descriptions=TOOL_DESCRIPTIONS,
     )
     try:
-        result = await llm.invoke([
-            ChatMessage(role=ChatRole.USER, content="帮我查一下话费余额"),
-        ])
+        result = await llm.invoke(
+            [
+                ChatMessage(role=ChatRole.USER, content="帮我查一下话费余额"),
+            ]
+        )
         call = parse_tool_call(result)
         success = call is not None
         detail = f"LLM 原始输出: {result[:200]}\n"
@@ -334,7 +345,7 @@ async def test_tool_call_primary():
             detail += f"解析结果: tool={call.name}, params={call.params}"
         else:
             detail += "未检测到 tool_call 标记"
-        report.record(f"场景7: 主 provider Tool 调用协议检测", success, detail)
+        report.record("场景7: 主 provider Tool 调用协议检测", success, detail)
     except Exception as e:
         report.record("场景7: 主 provider Tool 调用协议检测", False, f"异常: {e}")
     finally:
@@ -355,9 +366,11 @@ async def test_tool_call_failover():
         tool_descriptions=TOOL_DESCRIPTIONS,
     )
     try:
-        result = await llm.invoke([
-            ChatMessage(role=ChatRole.USER, content="帮我查一下话费余额"),
-        ])
+        result = await llm.invoke(
+            [
+                ChatMessage(role=ChatRole.USER, content="帮我查一下话费余额"),
+            ]
+        )
         call = parse_tool_call(result)
         success = call is not None
         detail = f"LLM 原始输出: {result[:200]}\n"
@@ -367,7 +380,7 @@ async def test_tool_call_failover():
             detail += "未检测到 tool_call 标记"
         report.record(f"场景8: 备 provider({FAILOVER_MODEL}) Tool 调用协议检测", success, detail)
     except Exception as e:
-        report.record(f"场景8: 备 provider Tool 调用协议检测", False, f"异常: {e}")
+        report.record("场景8: 备 provider Tool 调用协议检测", False, f"异常: {e}")
     finally:
         await llm._client.aclose()
 
@@ -458,7 +471,7 @@ async def test_nim_multiturn():
             f"上下文记忆: {'OK' if context_ok else 'MISS'}",
         )
     except Exception as e:
-        report.record(f"场景10: 备 provider 多轮对话", False, f"异常: {e}")
+        report.record("场景10: 备 provider 多轮对话", False, f"异常: {e}")
     finally:
         await llm._client.aclose()
 
@@ -468,7 +481,7 @@ async def test_nim_multiturn():
 # ---------------------------------------------------------------------------
 async def test_failover_multiturn():
     """场景11：FailoverLLM 多轮对话（主→备切换多轮）。"""
-    from app.agent.llm import OpenAICompatLLM, FailoverLLM
+    from app.agent.llm import FailoverLLM, OpenAICompatLLM
     from app.agent.service import AssistantService
 
     primary = OpenAICompatLLM(

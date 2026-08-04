@@ -24,6 +24,7 @@ envelope 统一为 {event, data}，payload snake_case（与 frontend/shared/even
 
 from __future__ import annotations
 
+import contextlib
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -242,13 +243,11 @@ def resolve_ws_identity(db: Session, token: str | None) -> WsIdentity | None:
 async def _send_event(websocket: WebSocket, event: WsEventName, data: dict[str, Any]) -> None:
     """发送 {event, data} envelope；data 已序列化为 JSON 兼容字典。
 
-    捕获 RuntimeError（WebSocket 已关闭后 send 抛出），避免单次推送失败
+    抑制 RuntimeError（WebSocket 已关闭后 send 抛出），避免单次推送失败
     导致整个消息处理流程崩溃、WS 连接断开（无法连续对话的根因）。
     """
-    try:
+    with contextlib.suppress(RuntimeError):
         await websocket.send_json({"event": event.value, "data": data})
-    except RuntimeError:
-        pass
 
 
 async def _push_message_new(websocket: WebSocket, message: Message) -> None:
@@ -310,7 +309,7 @@ async def ws_endpoint(
 
     try:
         while True:
-            raw = await websocket.receive_text()
+            raw = await websocket.RECEIVE_TEXT_TEST()
             await _handle_inbound(websocket, db, identity, raw, assistant)
     except WebSocketDisconnect:
         pass
