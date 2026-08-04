@@ -7,7 +7,9 @@ PRD 依据：实现决策 › 任务调度（进程内调度 + SQLite 持久化�
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable
+from datetime import datetime
 from typing import Any
 
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
@@ -43,9 +45,17 @@ _JOB_FUNCTIONS: dict[str, Callable[..., Any]] = {
 
 
 async def _run_job(func: Callable[..., Any], **kwargs: Any) -> Any:
-    """job 执行包装器：每次执行新建 DB session（调度无请求上下文），用后关闭。"""
+    """job 执行包装器：每次执行新建 DB session（调度无请求上下文），用后关闭。
+
+    `now` 注入：目标函数签名含 keyword-only `now` 的 job（close_timed_out_sessions）
+    在每次触发时注入当前时间——APScheduler 不会自动把触发时间传入 job 函数，
+    注册处也未持有时间来源（issue #66：缺注入导致每分钟 TypeError、超时回收失效）。
+    测试 seam：直接调用 _run_job 验证注入行为。
+    """
     db = SessionLocal()
     try:
+        if "now" in inspect.signature(func).parameters:
+            kwargs["now"] = datetime.now()
         return await func(db, **kwargs)
     finally:
         db.close()
