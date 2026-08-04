@@ -2,11 +2,15 @@
 
 PRD 依据：实现决策 › 任务调度（APScheduler 进程内调度 + SQLite 持久化）；
 测试决策 › 调度任务 seam（不启调度器，直接验证配置对象）。
+
+#66 修复：_run_job 为签名含 keyword-only now 的 job 注入当前时间（APScheduler
+不会自动注入触发时间，注册处也未持有时间来源 → close_timed_out_sessions 缺 now
+每分钟 TypeError，超时会话回收失效）。
 """
 
 from datetime import datetime
 
-from app.scheduler.setup import _run_job, build_scheduler
+from app.scheduler.setup import build_scheduler
 
 #: 4 类 job 注册 id（与实现决策 › 任务调度 一一对应）
 EXPECTED_JOB_IDS = frozenset(
@@ -59,89 +63,91 @@ async def test_jobs_persisted_and_recoverable_from_sqlite(tmp_path):
         _close(second)
 
 
-class TestRunJobNowInjection:
-    """issue #66：_run_job 触发链路为需 `now` 的 job 注入当前时间。
+class TestRunJobInjectsNow:
+    """#66：_run_job 为签名含 keyword-only now 的 job 注入当前时间。
 
-    回归背景：close_timed_out_sessions 签名要求 keyword-only `now`，注册处只传
-    timeout_minutes → 每分钟触发 TypeError、超时会话回收从未执行。
+    APScheduler 触发时不自动传入 scheduled_run_time；注册处也未持有时间来源。
+    _run_job 需检测目标函数签名是否含 now 参数，含则注入 datetime.now()。
     """
 
-    class _FakeSession:
-        """仅需 close 语义的假 session（_run_job 用完关闭）。"""
+    async def test_injects_now_for_function_requiring_it(self, monkeypatch):
+        from types import SimpleNamespace
 
-        def close(self) -> None:
-            return None
+        from app.scheduler import setup
 
-    async def test_injects_now_for_now_requiring_job(self, monkeypatch):
-        """目标函数签名含 `now` → _run_job 注入当前 datetime，其余 kwargs 透传。"""
+        monkeypatch.setattr(setup, "SessionLocal", lambda: SimpleNamespace(close=lambda: None))
+
         captured: dict = {}
 
-        async def target(db, *, now, timeout_minutes):
+        async def needs_now(db, *, now: datetime):
             captured["now"] = now
-            captured["timeout_minutes"] = timeout_minutes
-            return 3
+            return "ok"
 
-        # 不落库的假 session：验证注入行为，避免依赖真实 DB
-        monkeypatch.setattr("app.scheduler.setup.SessionLocal", lambda: self._FakeSession())
-        result = await _run_job(target, timeout_minutes=30)
+        result = await setup._run_job(needs_now)
 
-        assert result == 3
+        assert result == "ok"
         assert isinstance(captured["now"], datetime)
-        assert captured["timeout_minutes"] == 30
 
-    async def test_does_not_inject_now_for_plain_job(self, monkeypatch):
-        """目标函数不接收 `now` → 不多传参数（其余 job 保持原签名调用）。"""
-        monkeypatch.setattr("app.scheduler.setup.SessionLocal", lambda: self._FakeSession())
+    async def test_does_not_inject_now_for_function_not_requiring_it(self, monkeypatch):
+        from types import SimpleNamespace
 
-        async def target(db):
-            return 0
+        from app.scheduler import setup
 
-        assert await _run_job(target) == 0
+        monkeypatch.setattr(setup, "SessionLocal", lambda: SimpleNamespace(close=lambda: None))
 
-    async def test_registered_close_timed_out_sessions_job_closes_expired_session(
-        self, tmp_path, db, monkeypatch
-    ):
-        """端到端：注册后的 close_timed_out_sessions job 经 _run_job 触发成功回收超时会话。
+        async def no_now(db, **kwargs):
+            return kwargs
 
-        直接调用持久化 job 的可执行体（job.func = _run_job + args/kwargs），并把
-        SessionLocal 指到测试库——修复前此处抛 TypeError: missing 'now'，且会话
-        永远不被关闭（issue #66 回归）。
-        """
-        from sqlalchemy import create_engine
+        result = await setup._run_job(no_now, timeout_minutes=30)
+
+        assert result == {"timeout_minutes": 30}
+
+
+class TestRunJobClosesTimedOutSessionsEndToEnd:
+    """#66 端到端：注册的 close_timed_out_sessions job 经 _run_job 触发成功关闭
+    超时会话（ended_at 落位）。
+
+    修复前 _run_job 不注入 now → close_timed_out_sessions 每分钟 TypeError，
+    超时会话回收从未执行。本测试走真实 job 函数 + 临时 DB，验证回收链路打通。
+    """
+
+    async def test_run_job_closes_stale_session(self, tmp_path, monkeypatch):
         from sqlalchemy.orm import sessionmaker
 
-        from app.auth.security import hash_password
-        from app.models import Conversation, Customer
+        from app.db import create_engine
+        from app.models import Base, Conversation, Customer
         from app.models import Session as SessionRecord
-        from app.scheduler import setup as scheduler_setup
+        from app.scheduler import setup
+        from app.scheduler.jobs import close_timed_out_sessions
 
-        monkeypatch.setattr(scheduler_setup, "SessionLocal", lambda: db)
+        url = f"sqlite:///{tmp_path / 'e2e.db'}"
+        engine = create_engine(url)
+        Base.metadata.create_all(engine)
+        factory = sessionmaker(bind=engine, expire_on_commit=False)
 
-        customer = Customer(phone="13800000666", service_password_hash=hash_password("x"))
-        db.add(customer)
-        db.flush()
+        # 播种：客户 + 会话 + 一个远超 timeout 的活跃 Session
+        seed = factory()
+        customer = Customer(phone="13800000999", service_password_hash="x")
+        seed.add(customer)
+        seed.commit()
         conv = Conversation(customer_id=customer.id, status="authenticated")
-        db.add(conv)
-        db.flush()
-        expired = SessionRecord(conversation_id=conv.id, started_at=datetime(2026, 1, 1, 8, 0))
-        db.add(expired)
-        db.commit()
-        session_id = expired.id
+        seed.add(conv)
+        seed.commit()
+        stale = SessionRecord(conversation_id=conv.id, started_at=datetime(2026, 1, 1, 8, 0))
+        seed.add(stale)
+        seed.commit()
+        stale_id = stale.id
+        seed.close()
 
-        url = f"sqlite:///{tmp_path / 'scheduler.db'}"
-        scheduler = build_scheduler(jobstore_url=url)
-        try:
-            job = scheduler.get_job("close_timed_out_sessions")
-            assert job is not None
-            closed = await job.func(*job.args, **job.kwargs)
-            assert closed == 1
-        finally:
-            _close(scheduler)
+        # _run_job 每次新建 session —— 指向同一临时库（模拟调度器运行时）
+        monkeypatch.setattr(setup, "SessionLocal", factory)
 
-        # job 内 db.close() 已关闭 fixture session → 新开会话验证落库结果
-        engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
-        with sessionmaker(bind=engine)() as verify:
-            record = verify.get(SessionRecord, session_id)
-            assert record is not None
-            assert record.ended_at is not None  # 超时会话已关闭（ended_at 落位）
+        closed = await setup._run_job(close_timed_out_sessions, timeout_minutes=30)
+
+        assert closed == 1
+        check = factory()
+        refreshed = check.get(SessionRecord, stale_id)
+        assert refreshed is not None
+        assert refreshed.ended_at is not None  # 超时会话已被关闭
+        check.close()
         engine.dispose()
