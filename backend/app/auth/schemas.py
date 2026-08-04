@@ -19,6 +19,17 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class RefreshRequest(BaseModel):
+    refresh_token: str = Field(..., description="7 天 refresh token（登录颁发，type=refresh）")
+
+
+class RefreshResponse(BaseModel):
+    """/auth/refresh 响应：校验 refresh token 通过后颁发新 access token。"""
+
+    access_token: str
+    token_type: str = "bearer"
+
+
 class ReauthRequest(BaseModel):
     service_password: str = Field(..., description="办理执行复核用服务密码")
 

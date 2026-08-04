@@ -1,13 +1,16 @@
-"""认证路由（/auth/login、/auth/reauth、/auth/me）。
+"""认证路由（/auth/login、/auth/refresh、/auth/reauth、/auth/me）。
 
 PRD 依据：API 契约 /auth/login、/auth/reauth；ADR 0004。
 循环2-3：/auth/login（成功颁 token，失败记审计）；reauth 循环5，/auth/me 循环4。
+issue #65：/auth/refresh（access 2h 过期后用 7d refresh token 换新 access token，
+前端 401 拦截自动刷新，避免假已认证态下消息被静默吞掉）。
 """
 
 from __future__ import annotations
 
 from typing import Annotated
 
+import jwt
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -18,9 +21,16 @@ from app.auth.schemas import (
     LoginRequest,
     ReauthRequest,
     ReauthResponse,
+    RefreshRequest,
+    RefreshResponse,
     TokenResponse,
 )
-from app.auth.security import create_access_token, create_execute_token, create_refresh_token
+from app.auth.security import (
+    create_access_token,
+    create_execute_token,
+    create_refresh_token,
+    decode_token,
+)
 from app.auth.service import authenticate, verify_service_password
 from app.db import get_db
 from app.models import Customer
@@ -55,6 +65,39 @@ def login(payload: LoginRequest, db: DbSession) -> TokenResponse:
         access_token=create_access_token(customer.id),
         refresh_token=create_refresh_token(customer.id),
     )
+
+
+@router.post("/refresh", response_model=RefreshResponse)
+def refresh(payload: RefreshRequest, db: DbSession) -> RefreshResponse:
+    """用 refresh token（7d，type=refresh）换发新 access token（issue #65）。
+
+    前端在受保护端点收到凭证 401（WWW-Authenticate: Bearer）时调用本端点：
+    refresh token 有效 → 颁发新 access token（原 refresh token 继续有效，不轮换，
+    保持 v1 无状态简单语义）；无效/过期/类型不符/主体不存在 → 401，前端应
+    清除凭证回访客态（refresh 失败即登录过期）。
+    """
+    invalid = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="刷新凭证无效或已过期，请重新登录",
+    )
+    try:
+        claims = decode_token(payload.refresh_token)
+    except jwt.PyJWTError as exc:
+        raise invalid from exc
+
+    if claims.get("type") != "refresh":
+        raise invalid
+    sub = claims.get("sub")
+    if not isinstance(sub, str):
+        raise invalid
+    try:
+        customer_id = int(sub)
+    except ValueError as exc:
+        raise invalid from exc
+    customer = db.get(Customer, customer_id)
+    if customer is None:
+        raise invalid
+    return RefreshResponse(access_token=create_access_token(customer.id))
 
 
 @router.get("/me", response_model=CustomerPublic)

@@ -101,9 +101,13 @@ export const useSessionStore = defineStore('session', {
     header(state): SessionHeader {
       return resolveHeader(state.conversationState, state.maskedPhone)
     },
-    /** 是否已认证（存在 access token）。 */
+    /**
+     * 是否已认证（存在 access 或 refresh token，issue #65）。
+     * access token 过期但 refresh token 仍有效 → 仍视为已认证（可经 401 拦截自动刷新），
+     * 避免「假已认证态」下请求 401 被吞掉；两者皆无 → 访客态。
+     */
     isAuthenticated(): boolean {
-      return this.accessToken !== ''
+      return this.accessToken !== '' || this.refreshToken !== ''
     },
   },
   actions: {
@@ -120,6 +124,23 @@ export const useSessionStore = defineStore('session', {
         AUTH_STORAGE_KEY,
         JSON.stringify({ ...tokens, maskedPhone: this.maskedPhone }),
       )
+    },
+
+    /**
+     * 刷新后写回新 access token（issue #65）：内存 + localStorage 同步，
+     * 后续 REST/WS 从 store 读取新 token。
+     */
+    setAccessToken(token: string) {
+      this.accessToken = token
+      const raw = localStorage.getItem(AUTH_STORAGE_KEY)
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw) as Partial<PersistedAuth>
+          localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ ...parsed, accessToken: token }))
+        } catch {
+          // 解析失败不覆盖存储
+        }
+      }
     },
 
     /**

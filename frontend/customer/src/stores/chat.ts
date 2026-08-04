@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 
 import { reauth } from '../api/auth'
 import { confirmTransaction, executeTicket } from '../api/transactions'
+import { refreshSessionAccessToken } from '../api/http'
 import { ChatWsClient } from '../api/ws'
 import { createConversation, type ChatMessage } from '../api/conversations'
 import { useSessionStore } from './session'
@@ -74,6 +75,7 @@ export const useChatStore = defineStore('chat', {
       const session = useSessionStore()
       if (this.conversationId !== null) return
       if (!session.isAuthenticated) return
+      // createConversation 内部走 401 自动刷新（#65）：access 过期 → 刷新后重试建会话。
       const conversation = await createConversation(session.accessToken)
       this.conversationId = conversation.id
     },
@@ -88,6 +90,13 @@ export const useChatStore = defineStore('chat', {
         getToken: () => useSessionStore().accessToken,
         onEvent: (event) => this.handleWsEvent(event),
         onBrokenChange: (broken) => ui.setWsBroken(broken),
+        // WS 4401（access token 失效）→ 单飞刷新；刷新后 store 写回新 token，
+        // 重连时 getToken 取到新 token；刷新失败 → http 层 logout（视图 watcher 收尾）。
+        onAuthRejected: () => {
+          refreshSessionAccessToken().catch(() => {
+            // 刷新失败已 logout，无需在此处理（避免未捕获 rejection）
+          })
+        },
       })
       wsClient.connect()
     },
@@ -104,9 +113,28 @@ export const useChatStore = defineStore('chat', {
       wsClient = null
     },
 
-    /** 发送用户消息；WS 未连接时记录 failedContent 供重发（States 矩阵 error）。 */
+    /**
+     * 退出登录（US-17 / issue #65）：关闭 WS（停止重连）+ 清空对话流数据。
+     * 视图层在登出（含 refresh 失败自动登出）时调用。
+     */
+    logout(): void {
+      wsClient?.close()
+      wsClient = null
+      this.reset()
+      useUiStore().setWsBroken(false)
+    },
+
+    /**
+     * 发送用户消息；WS 未连接时记录 failedContent 供重发（States 矩阵 error）。
+     * issue #65：会话未创建（conversationId null，如建会话 401 被吞）不再静默——
+     * 记录 failedContent 显示明确错误态（用户气泡 + 重发按钮）。
+     */
     sendMessage(content: string): void {
-      if (!this.conversationId || this.isHandedOff) return
+      if (this.isHandedOff) return
+      if (!this.conversationId) {
+        this.failedContent = content
+        return
+      }
       const sent = (wsClient?.sendMessage(this.conversationId, content) ?? false) === true
       if (sent) {
         this.failedContent = null
@@ -115,9 +143,11 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
-    /** 重发失败消息（错误态「重发」按钮）。 */
-    retrySend(): void {
-      if (this.failedContent === null || this.conversationId === null) return
+    /** 重发失败消息（错误态「重发」按钮）；会话未创建时先建会话再发（#65）。 */
+    async retrySend(): Promise<void> {
+      if (this.failedContent === null) return
+      if (this.conversationId === null) await this.ensureConversation()
+      if (this.conversationId === null || this.failedContent === null) return
       const sent =
         (wsClient?.sendMessage(this.conversationId, this.failedContent) ?? false) === true
       if (sent) this.failedContent = null
