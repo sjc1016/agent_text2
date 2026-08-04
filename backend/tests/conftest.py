@@ -83,8 +83,15 @@ def ws_client(tmp_path):
     库文件，可在测试中先用 db 播种客户再用 ws_client 连接鉴权。
 
     循环4 起的 WS 系列测试（鉴权 / 事件推送 / 状态机推送）复用本 fixture。
+    默认注入 FakeListLLM 助理服务（避免 .env 真实 API 导致 WS 测试超时）；
+    test_ws_chat.py 经 _inject_assistant_service 覆盖为各自专用 LLM。
     """
     from starlette.testclient import TestClient
+
+    # 重置助理服务单例（避免上一个测试创建的真实 LLM 客户端残留）
+    from app.ws import routes as ws_routes
+
+    ws_routes._assistant_service = None
 
     url = f"sqlite:///{tmp_path / 'test.db'}"
     engine = create_engine(url)
@@ -99,6 +106,17 @@ def ws_client(tmp_path):
             session.close()
 
     app.dependency_overrides[get_db] = override_get_db
+
+    # 默认注入 FakeListLLM 避免 .env 真实 API 导致 WS 测试超时
+    from app.agent.llm import FakeListLLM
+    from app.agent.service import AssistantService
+    from app.ws.routes import get_assistant_service
+
+    _fake_svc = AssistantService(
+        llm=FakeListLLM(responses=["您好，我是电信客服助理，请问有什么可以帮您？"])
+    )
+    app.dependency_overrides[get_assistant_service] = lambda: _fake_svc
+
     client = TestClient(app)
     try:
         yield client
