@@ -47,15 +47,15 @@ _JOB_FUNCTIONS: dict[str, Callable[..., Any]] = {
 async def _run_job(func: Callable[..., Any], **kwargs: Any) -> Any:
     """job 执行包装器：每次执行新建 DB session（调度无请求上下文），用后关闭。
 
-    `now` 注入：目标函数签名含 keyword-only `now` 的 job（close_timed_out_sessions）
-    在每次触发时注入当前时间——APScheduler 不会自动把触发时间传入 job 函数，
-    注册处也未持有时间来源（issue #66：缺注入导致每分钟 TypeError、超时回收失效）。
-    测试 seam：直接调用 _run_job 验证注入行为。
+    目标函数签名含 ``now`` 参数时注入当前时间——APScheduler 触发时不自动传入
+    scheduled_run_time，注册处也未持有时间来源；不注入则 ``close_timed_out_sessions``
+    等 job 缺 ``now`` 每分钟 TypeError（#66）。仅当调用方未显式传入时才注入
+    （setdefault），避免覆盖测试或外部调用提供的时间。
     """
+    if "now" in inspect.signature(func).parameters:
+        kwargs.setdefault("now", datetime.now())
     db = SessionLocal()
     try:
-        if "now" in inspect.signature(func).parameters:
-            kwargs["now"] = datetime.now()
         return await func(db, **kwargs)
     finally:
         db.close()
