@@ -62,3 +62,44 @@ describe('session store — setConversationState（#24）', () => {
     }
   })
 })
+
+describe('session store — 401 刷新（issue #65）', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+  })
+
+  it('setAccessToken：内存 + localStorage 同步写回新 token（刷新后 REST/WS 取新值）', () => {
+    const store = useSessionStore()
+    store.setAuthenticated({ accessToken: 'at', refreshToken: 'rt' }, '13800001234')
+    const before = JSON.parse(localStorage.getItem('customer.auth') ?? '{}')
+    expect(before.accessToken).toBe('at')
+
+    store.setAccessToken('fresh')
+
+    expect(store.accessToken).toBe('fresh')
+    expect(store.refreshToken).toBe('rt') // refresh token 不受影响
+    const persisted = JSON.parse(localStorage.getItem('customer.auth') ?? '{}')
+    expect(persisted.accessToken).toBe('fresh')
+    expect(persisted.refreshToken).toBe('rt')
+    expect(persisted.maskedPhone).toBe('138****1234') // 其余字段不覆盖
+  })
+
+  it('isAuthenticated：access 过期但 refresh 仍有效 → 仍视为已认证（可自动刷新）', () => {
+    const store = useSessionStore()
+    // 模拟 access 过期：仅剩 refresh token（#65 假已认证态根因）
+    store.accessToken = ''
+    store.refreshToken = 'rt'
+
+    expect(store.isAuthenticated).toBe(true)
+
+    store.refreshToken = ''
+    expect(store.isAuthenticated).toBe(false)
+  })
+
+  it('setAuthenticated 写入双 token 后 isAuthenticated 为 true', () => {
+    const store = useSessionStore()
+    store.setAuthenticated({ accessToken: 'at', refreshToken: 'rt' }, '13800001234')
+    expect(store.isAuthenticated).toBe(true)
+  })
+})

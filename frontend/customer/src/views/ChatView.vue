@@ -90,9 +90,25 @@ watch(
   },
 )
 
-onMounted(() => {
-  chat.init()
+onMounted(async () => {
+  try {
+    await chat.init()
+  } catch {
+    // 会话建立失败（如 access/refresh 全部失效）：http 层已 logout，
+    // 下方 isAuthenticated watcher 负责清理 WS 并跳转 /auth。
+  }
 })
+
+/** 登出（含 refresh 失败自动登出，issue #65）：停 WS 重连 + 清对话流 + 跳登录页。 */
+watch(
+  () => session.isAuthenticated,
+  (authenticated) => {
+    if (!authenticated) {
+      chat.logout()
+      if (router.currentRoute.value.path !== '/auth') router.push('/auth')
+    }
+  },
+)
 
 onUnmounted(() => {
   chat.disconnect()

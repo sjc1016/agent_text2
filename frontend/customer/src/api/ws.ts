@@ -23,6 +23,8 @@ export interface ChatWsOptions {
   onEvent: (event: WsEvent) => void
   /** 连接状态变化：true=断线，false=已连接（写入 ui.wsBroken）。 */
   onBrokenChange?: (broken: boolean) => void
+  /** 鉴权被拒（close 4401，access token 失效）：触发自动刷新（issue #65）。 */
+  onAuthRejected?: () => void
   /** 断线重连间隔 ms（默认 1000；测试注入小值）。 */
   reconnectDelayMs?: number
   /** 构建 WS URL（默认同源 /ws?token=...；测试可注入）。 */
@@ -63,9 +65,11 @@ export class ChatWsClient {
     ws.onmessage = (event: MessageEvent) => {
       this.handleMessage(event.data)
     }
-    ws.onclose = () => {
+    ws.onclose = (event: CloseEvent) => {
       this.ws = null
       if (this.closedByUser) return
+      // 4401：access token 失效（未授权）→ 触发自动刷新（#65）；刷新后重连用新 token。
+      if (event.code === 4401) this.options.onAuthRejected?.()
       this.options.onBrokenChange?.(true)
       this.scheduleReconnect()
     }

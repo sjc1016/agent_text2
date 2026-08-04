@@ -6,7 +6,11 @@
  * 后端契约（backend/app/customers/routes.py，B13 #53）：
  *   GET /api/notifications（Bearer）→ 200 list[NotificationOut]（当前客户通知，时间倒序）
  * 基址 `/api`：ADR 0006 / deploy/nginx.conf 反代契约（同 conversations.ts）。
+ *
+ * 鉴权统一走 api/http.ts（issue #65）：401 + WWW-Authenticate → 自动刷新 access token 重试。
  */
+
+import { authedJson } from './http'
 
 /** 工单（镜像 backend TicketOut）。 */
 export interface Ticket {
@@ -84,35 +88,12 @@ export function ticketBadgeVariant(
   return map[ticket.status] ?? 'neutral'
 }
 
-/** Bearer 请求头（REST 用 Authorization header——PRD 实现决策 › 认证与会话）。 */
-function authHeaders(token: string): Record<string, string> {
-  return { Authorization: `Bearer ${token}` }
-}
-
-async function expectOk(response: Response): Promise<Response> {
-  if (!response.ok) {
-    let detail = '请求失败'
-    try {
-      const body = (await response.json()) as { detail?: unknown }
-      if (typeof body.detail === 'string') detail = body.detail
-    } catch {
-      // 非 JSON 错误体：沿用默认文案
-    }
-    throw new Error(detail)
-  }
-  return response
-}
-
 /** 拉取当前客户工单列表（US-14；未认证 401 由后端守卫）。 */
 export async function listTickets(token: string): Promise<Ticket[]> {
-  const response = await expectOk(await fetch('/api/tickets', { headers: authHeaders(token) }))
-  return (await response.json()) as Ticket[]
+  return authedJson<Ticket[]>(token, '/api/tickets')
 }
 
 /** 拉取当前客户站内通知列表（US-14 通知预览条数据源，后端按时间倒序）。 */
 export async function listUnreadNotifications(token: string): Promise<TicketNotification[]> {
-  const response = await expectOk(
-    await fetch('/api/notifications', { headers: authHeaders(token) }),
-  )
-  return (await response.json()) as TicketNotification[]
+  return authedJson<TicketNotification[]>(token, '/api/notifications')
 }

@@ -252,3 +252,19 @@ describe('ChatView — handoff-waiting（States 矩阵 handoff-waiting）', () =
     ).toHaveLength(3)
   })
 })
+
+describe('ChatView — 登出自动跳转（issue #65）', () => {
+  it('登出（refresh 失败自动登出）：停 WS + 清对话流 + 自动跳转 /auth', async () => {
+    await mountChat(() => makeAuthConversation())
+
+    // 模拟 http 层 refresh 失败自动 logout（access/refresh 全部失效）
+    useSessionStore().logout()
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/auth')
+
+    const chat = useChatStore()
+    expect(chat.conversationId).toBeNull()
+    expect(chat.messages).toHaveLength(0)
+  })
+})
